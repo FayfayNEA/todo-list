@@ -1,0 +1,15 @@
+{
+  "name": "checklist-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Daily checklist tracker with a small sync API",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FayfayNEA/todo-list.git"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "@vercel/blob": "^2.8.0"
+  }
+}
