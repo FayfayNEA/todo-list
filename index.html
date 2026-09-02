@@ -338,6 +338,8 @@
     background: rgba(43, 51, 32, 0.82);
     display: flex; align-items: center; justify-content: center; padding: 20px;
   }
+  /* `hidden` alone loses to the display:flex above — make it explicit. */
+  .auth-gate[hidden] { display: none !important; }
   .auth-card {
     background: var(--card); border: 1px solid var(--border); border-radius: 10px;
     padding: 22px 20px; max-width: 340px; width: 100%;
