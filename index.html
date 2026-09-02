@@ -427,6 +427,21 @@
 </div>
 
 <script>
+// ---------- STORAGE ----------
+// Persists to this browser's localStorage. Data stays on this device/browser.
+if (!window.storage) {
+  window.storage = {
+    async get(key) {
+      try { const v = localStorage.getItem(key); return v === null ? null : { value: v }; }
+      catch (e) { return null; }
+    },
+    async set(key, value) {
+      try { localStorage.setItem(key, value); return true; }
+      catch (e) { return false; }
+    }
+  };
+}
+
 const DAYS_KEY = 'tracker:days:v2';
 const BACKLOG_KEY = 'tracker:backlog:v2';
 let daysMap = {};
