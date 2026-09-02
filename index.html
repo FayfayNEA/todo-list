@@ -499,6 +499,16 @@ let apiKey = null;
 
 function getKey() {
   if (apiKey) return apiKey;
+  // Allow a one-time magic link: ?key=... (stored, then stripped from the URL)
+  try {
+    const p = new URLSearchParams(location.search).get('key');
+    if (p) {
+      apiKey = p.trim().toLowerCase();
+      try { localStorage.setItem(AUTH_KEY, apiKey); } catch (e) {}
+      history.replaceState(null, '', location.pathname);
+      return apiKey;
+    }
+  } catch (e) {}
   try { apiKey = localStorage.getItem(AUTH_KEY) || null; } catch (e) {}
   return apiKey;
 }
@@ -658,6 +668,7 @@ async function loadAll() {
       return;
     }
     if (!res.ok) throw new Error('HTTP ' + res.status);
+    hideAuthGate();
     const state = await res.json();
 
     const serverEmpty = !state || ((!state.days || Object.keys(state.days).length === 0) && (!state.backlog || state.backlog.length === 0));
