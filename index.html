@@ -213,10 +213,17 @@
     border-radius: 8px;
   }
   .date-chip .num { font-size: 14px; font-weight: 600; color: var(--text); margin-top: 2px; }
+  .date-chip .mon { font-size: 8px; margin-top: 1px; opacity: 0.7; }
   .date-chip.active { background: var(--text); color: var(--paper); border-color: var(--text); }
   .date-chip.active .num { color: var(--paper); }
+  .date-chip.today { border-color: var(--accent); }
+  .date-chip.today .num { color: var(--accent); }
+  .date-chip.active.today .num { color: var(--paper); }
   .date-chip.drop-target { border-color: var(--accent); background: var(--highlight); transform: scale(1.06); }
   .strip-nav { background: var(--card); border: 1px solid var(--border); font-size: 13px; color: var(--muted); cursor: pointer; padding: 6px 8px; border-radius: 8px; }
+  .strip-jump { flex: 0 0 auto; font-size: 10px; padding: 5px 6px; border: 1px solid var(--border); font-family: inherit; background: var(--card); color: var(--muted); border-radius: 8px; }
+  .strip-jump::-webkit-calendar-picker-indicator { opacity: 0.55; }
+  .strip-hint { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: -8px 0 14px; opacity: 0.8; }
 
   .progress-bar { height: 5px; background: var(--border); border: 1px solid rgba(23,23,15,0.15); overflow: hidden; margin-bottom: 18px; border-radius: 8px; }
   .progress-fill { height: 100%; background: var(--done); width: 0%; transition: width 0.3s ease; }
@@ -348,7 +355,8 @@
     text-transform: uppercase; letter-spacing: 0.08em; cursor: pointer; border-radius: 8px;
   }
   .auth-card button:hover { background: var(--accent); border-color: var(--accent); }
-  .auth-card .err { color: var(--danger); min-height: 14px; }
+  .auth-card .err { color: var(--muted); min-height: 14px; font-size: 11px; }
+  .auth-card .err.bad { color: var(--danger); }
 </style>
 </head>
 <body>
@@ -409,6 +417,7 @@
       <button class="strip-nav" onclick="shiftStrip(-1)">&lsaquo;</button>
       <div class="date-strip-scroll" id="dateStripScroll"></div>
       <button class="strip-nav" onclick="shiftStrip(1)">&rsaquo;</button>
+      <input type="date" class="strip-jump" onchange="jumpToDate(this.value)" title="jump to date">
     </div>
     <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
 
@@ -437,6 +446,13 @@
 
   <!-- BACKLOG VIEW -->
   <div id="backlogView" class="tab-panel" style="display:none;">
+    <div class="date-strip">
+      <button class="strip-nav" onclick="shiftStrip(-1)">&lsaquo;</button>
+      <div class="date-strip-scroll" id="dateStripScrollBacklog"></div>
+      <button class="strip-nav" onclick="shiftStrip(1)">&rsaquo;</button>
+      <input type="date" class="strip-jump" onchange="jumpToDate(this.value)" title="jump to date">
+    </div>
+    <div class="strip-hint">drag an item onto a day to schedule it</div>
     <div class="add-box">
       <textarea id="backlogInput" rows="1" placeholder="add to backlog... (paste a few lines to add several at once)"></textarea>
     </div>
@@ -489,12 +505,15 @@ function clearKey() {
   apiKey = null;
   try { localStorage.removeItem(AUTH_KEY); } catch (e) {}
 }
-function showAuthGate(msg) {
+function showAuthGate(msg, bad) {
   const gate = document.getElementById('authGate');
   if (!gate) return;
   gate.hidden = false;
   const err = document.getElementById('authGateMsg');
-  if (err) err.textContent = msg || '';
+  if (err) {
+    err.textContent = msg || '';
+    err.className = 'err' + (bad ? ' bad' : '');
+  }
   const input = document.getElementById('authGateInput');
   if (input) input.focus();
 }
@@ -573,14 +592,14 @@ function queuePush() {
 async function pushState() {
   pushTimer = null;
   const key = getKey();
-  if (!key) { setSaveStatus('offline'); showAuthGate('Enter your passphrase to sync.'); return; }
+  if (!key) { setSaveStatus('offline'); showAuthGate(''); return; }
   try {
     const res = await fetch('/api/sync', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
       body: JSON.stringify({ days: daysMap, backlog })
     });
-    if (res.status === 401) { clearKey(); pushFailed = true; setSaveStatus('error'); showAuthGate('That passphrase was rejected. Try again.'); return; }
+    if (res.status === 401) { clearKey(); pushFailed = true; setSaveStatus('error'); showAuthGate('That passphrase was rejected. Try again.', true); return; }
     if (!res.ok) throw new Error('HTTP ' + res.status);
     pushFailed = false;
     setSaveStatus('saved');
@@ -623,7 +642,7 @@ async function loadAll() {
     if (!cached) { seedDays(); backlog = seedBacklog(); }
     setSaveStatus('offline');
     renderAll();
-    showAuthGate(cached ? 'Enter your passphrase to sync across devices.' : 'Enter your passphrase to get started.');
+    showAuthGate('');
     return;
   }
 
@@ -634,7 +653,7 @@ async function loadAll() {
       if (!cached) { seedDays(); backlog = seedBacklog(); }
       setSaveStatus('error');
       renderAll();
-      showAuthGate('That passphrase was rejected. Try again.');
+      showAuthGate('That passphrase was rejected. Try again.', true);
       return;
     }
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -721,12 +740,20 @@ function switchTab(tab) {
   document.getElementById('backlogView').style.display = tab === 'backlog' ? 'block' : 'none';
   document.getElementById('metricsView').style.display = tab === 'metrics' ? 'block' : 'none';
   if (tab === 'metrics') renderMetrics();
+  if (tab === 'backlog') { renderDateStrip(); renderBacklog(); }
 }
 
 // ---------- DATE STRIP ----------
+const STRIP_IDS = ['dateStripScroll', 'dateStripScrollBacklog'];
+
 function shiftStrip(delta) {
-  stripStart = addDaysToStr(stripStart, delta * 5);
+  stripStart = addDaysToStr(stripStart, delta * 7);
   renderDateStrip();
+}
+function jumpToDate(value) {
+  if (!value) return;
+  stripStart = addDaysToStr(value, -2);
+  selectDay(value);
 }
 function selectDay(dateStr) {
   currentDate = dateStr;
@@ -735,18 +762,25 @@ function selectDay(dateStr) {
   renderDay();
 }
 function renderDateStrip() {
-  const scroll = document.getElementById('dateStripScroll');
-  scroll.innerHTML = '';
-  for (let i = 0; i < 8; i++) {
-    const dateStr = addDaysToStr(stripStart, i);
-    const d = new Date(dateStr + 'T00:00:00');
-    const chip = document.createElement('div');
-    chip.className = 'date-chip' + (dateStr === currentDate ? ' active' : '');
-    chip.dataset.date = dateStr;
-    chip.innerHTML = `<div class="dow">${d.toLocaleDateString(undefined,{weekday:'short'})}</div><div class="num">${d.getDate()}</div>`;
-    chip.onclick = () => selectDay(dateStr);
-    scroll.appendChild(chip);
-  }
+  const today = todayStr();
+  STRIP_IDS.forEach(id => {
+    const scroll = document.getElementById(id);
+    if (!scroll) return;
+    scroll.innerHTML = '';
+    for (let i = 0; i < 14; i++) {
+      const dateStr = addDaysToStr(stripStart, i);
+      const d = new Date(dateStr + 'T00:00:00');
+      const chip = document.createElement('div');
+      chip.className = 'date-chip'
+        + (dateStr === currentDate ? ' active' : '')
+        + (dateStr === today ? ' today' : '');
+      chip.dataset.date = dateStr;
+      chip.innerHTML = `<div class="dow">${d.toLocaleDateString(undefined,{weekday:'short'})}</div><div class="num">${d.getDate()}</div><div class="mon">${d.toLocaleDateString(undefined,{month:'short'})}</div>`;
+      chip.onclick = () => selectDay(dateStr);
+      scroll.appendChild(chip);
+    }
+  });
+  document.querySelectorAll('.strip-jump').forEach(inp => { inp.value = currentDate; });
 }
 
 // ---------- DAY ITEM BUILD + DRAG ----------
@@ -758,7 +792,7 @@ function toggleCompleted(category) {
   renderDay();
 }
 
-function buildItemLi(item, onToggle, onRemove, draggable) {
+function buildItemLi(item, onToggle, onRemove, onDrop) {
   const li = document.createElement('li');
   li.className = 'task-item';
   li.dataset.id = item.id;
@@ -787,12 +821,12 @@ function buildItemLi(item, onToggle, onRemove, draggable) {
   topRow.appendChild(remove);
   li.appendChild(topRow);
 
-  if (draggable) attachDrag(li, item.id);
+  if (onDrop) attachDrag(li, onDrop);
 
   return li;
 }
 
-function attachDrag(li, itemId) {
+function attachDrag(li, onDrop) {
   let down = false;
   let dragging = false;
   let clone = null;
@@ -800,7 +834,7 @@ function attachDrag(li, itemId) {
   const THRESHOLD = 6;
 
   li.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('.checkbox') || e.target.closest('.remove')) return;
+    if (e.target.closest('.checkbox') || e.target.closest('.remove') || e.target.closest('.schedule-row')) return;
     down = true;
     startX = e.clientX; startY = e.clientY;
     try { li.setPointerCapture(e.pointerId); } catch (err) {}
@@ -843,8 +877,8 @@ function attachDrag(li, itemId) {
     const target = document.elementFromPoint(e.clientX, e.clientY);
     const chip = target && target.closest('.date-chip');
     if (clone) { clone.remove(); clone = null; }
-    if (chip && chip.dataset.date !== currentDate) {
-      moveDayItem(itemId, chip.dataset.date);
+    if (chip && typeof onDrop === 'function') {
+      onDrop(chip.dataset.date);
     }
   }
 
@@ -927,7 +961,7 @@ function renderDay() {
     emptyEl.style.display = undone.length === 0 ? 'block' : 'none';
 
     undone.forEach(item => {
-      activeList.appendChild(buildItemLi(item, () => toggleDayItem(item.id), () => removeDayItem(item.id), true));
+      activeList.appendChild(buildItemLi(item, () => toggleDayItem(item.id), () => removeDayItem(item.id), (d) => { if (d !== currentDate) moveDayItem(item.id, d); }));
     });
 
     if (done.length > 0) {
@@ -935,7 +969,7 @@ function renderDay() {
       toggleEl.textContent = (showCompleted[category] ? '\u25be ' : '\u25b8 ') + done.length + ' completed';
       doneList.style.display = showCompleted[category] ? 'block' : 'none';
       done.forEach(item => {
-        doneList.appendChild(buildItemLi(item, () => toggleDayItem(item.id), () => removeDayItem(item.id), false));
+        doneList.appendChild(buildItemLi(item, () => toggleDayItem(item.id), () => removeDayItem(item.id), null));
       });
     } else {
       toggleEl.style.display = 'none';
@@ -999,7 +1033,7 @@ function renderBacklog() {
 
     const dateInput = document.createElement('input');
     dateInput.type = 'date';
-    dateInput.value = todayStr();
+    dateInput.value = currentDate;
 
     const scheduleBtn = document.createElement('button');
     scheduleBtn.textContent = 'Schedule';
@@ -1010,6 +1044,8 @@ function renderBacklog() {
 
     li.appendChild(topRow);
     li.appendChild(scheduleRow);
+
+    attachDrag(li, (d) => scheduleBacklogItem(item.id, d));
     return li;
   }
 
