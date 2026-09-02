@@ -188,6 +188,9 @@
     margin-right: -6px;
   }
   .tab.active { background: var(--card); color: var(--text); border-bottom-color: var(--card); z-index: 2; position: relative; }
+  /* While dragging a task, the backlog tab becomes a drop target. */
+  body.dragging-item .tab[data-tab="backlog"] { border-color: var(--accent); border-style: dashed; color: var(--accent); }
+  .tab.drop-target { background: var(--highlight); border-color: var(--accent); border-style: solid; color: var(--text); z-index: 3; position: relative; }
   .tab-panel {
     border: 1px solid var(--border);
     background: var(--card);
@@ -424,6 +427,7 @@
       <button class="strip-nav" onclick="shiftStrip(1)">&rsaquo;</button>
       <input type="date" class="strip-jump" onchange="jumpToDate(this.value)" title="jump to date">
     </div>
+    <div class="strip-hint">drag a task onto a day to move it, or onto the backlog tab to defer it</div>
     <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
 
     <div class="add-box">
@@ -844,12 +848,12 @@ function buildItemLi(item, onToggle, onRemove, onDrop) {
   topRow.appendChild(remove);
   li.appendChild(topRow);
 
-  if (onDrop) attachDrag(li, onDrop);
+  if (onDrop) attachDrag(li, onDrop, () => moveToBacklog(item.id));
 
   return li;
 }
 
-function attachDrag(li, onDrop) {
+function attachDrag(li, onDrop, onBacklog) {
   let down = false;
   let dragging = false;
   let clone = null;
@@ -866,12 +870,27 @@ function attachDrag(li, onDrop) {
   function startDrag(e) {
     dragging = true;
     li.classList.add('dragging');
+    document.body.classList.add('dragging-item');
     clone = li.cloneNode(true);
     clone.classList.add('drag-clone');
     clone.style.width = li.offsetWidth + 'px';
     clone.style.left = (e.clientX - li.offsetWidth / 2) + 'px';
     clone.style.top = (e.clientY - 20) + 'px';
     document.body.appendChild(clone);
+  }
+
+  // What's under the pointer: a date chip, or the backlog tab (if this item can go there).
+  function dropTargetsAt(x, y) {
+    const el = document.elementFromPoint(x, y);
+    if (!el) return { chip: null, backlogTab: null };
+    return {
+      chip: el.closest('.date-chip'),
+      backlogTab: typeof onBacklog === 'function' ? el.closest('.tab[data-tab="backlog"]') : null
+    };
+  }
+  function clearDropHighlights() {
+    document.querySelectorAll('.date-chip.drop-target, .tab.drop-target')
+      .forEach(c => c.classList.remove('drop-target'));
   }
 
   li.addEventListener('pointermove', (e) => {
@@ -884,10 +903,10 @@ function attachDrag(li, onDrop) {
     }
     clone.style.left = (e.clientX - clone.offsetWidth / 2) + 'px';
     clone.style.top = (e.clientY - 20) + 'px';
-    document.querySelectorAll('.date-chip').forEach(c => c.classList.remove('drop-target'));
-    const target = document.elementFromPoint(e.clientX, e.clientY);
-    const chip = target && target.closest('.date-chip');
+    clearDropHighlights();
+    const { chip, backlogTab } = dropTargetsAt(e.clientX, e.clientY);
     if (chip) chip.classList.add('drop-target');
+    else if (backlogTab) backlogTab.classList.add('drop-target');
   });
 
   function endDrag(e) {
@@ -895,13 +914,15 @@ function attachDrag(li, onDrop) {
     if (!dragging) return;
     dragging = false;
     li.classList.remove('dragging');
+    document.body.classList.remove('dragging-item');
     try { li.releasePointerCapture(e.pointerId); } catch (err) {}
-    document.querySelectorAll('.date-chip').forEach(c => c.classList.remove('drop-target'));
-    const target = document.elementFromPoint(e.clientX, e.clientY);
-    const chip = target && target.closest('.date-chip');
+    clearDropHighlights();
+    const { chip, backlogTab } = dropTargetsAt(e.clientX, e.clientY);
     if (clone) { clone.remove(); clone = null; }
     if (chip && typeof onDrop === 'function') {
       onDrop(chip.dataset.date);
+    } else if (backlogTab && typeof onBacklog === 'function') {
+      onBacklog();
     }
   }
 
