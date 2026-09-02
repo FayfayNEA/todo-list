@@ -5,12 +5,13 @@ const STATE_PATH = 'state.json';
 const INBOX_PATH = 'inbox.json';
 
 export function authorize(req) {
-  const secret = process.env.APP_SECRET;
+  const secret = (process.env.APP_SECRET || '').trim().toLowerCase();
   if (!secret) return false;
   const header = req.headers['authorization'] || '';
-  const bearer = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  const bearer = header.startsWith('Bearer ') ? header.slice(7) : '';
   const q = (req.query && (req.query.k || req.query.key)) || '';
-  return bearer === secret || q === secret;
+  const given = (bearer || q || '').trim().toLowerCase();
+  return given.length > 0 && given === secret;
 }
 
 async function readJson(pathname, fallback) {

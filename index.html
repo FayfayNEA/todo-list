@@ -364,7 +364,8 @@
   <div class="auth-card">
     <h2>tracker</h2>
     <p>Enter your passphrase to sync this checklist across your devices.</p>
-    <input type="password" id="authGateInput" autocomplete="current-password"
+    <input type="text" id="authGateInput" autocomplete="off" autocapitalize="none"
+           autocorrect="off" spellcheck="false" inputmode="text"
            placeholder="passphrase" onkeydown="if(event.key==='Enter')submitAuthGate()">
     <div class="err" id="authGateMsg"></div>
     <button onclick="submitAuthGate()">Unlock</button>
@@ -523,7 +524,7 @@ function hideAuthGate() {
 }
 function submitAuthGate() {
   const input = document.getElementById('authGateInput');
-  const val = (input && input.value || '').trim();
+  const val = (input && input.value || '').trim().toLowerCase();
   if (!val) return;
   apiKey = val;
   try { localStorage.setItem(AUTH_KEY, val); } catch (e) {}
