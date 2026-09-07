@@ -1,7 +1,13 @@
 import { authorize, getState, putState, getInbox, putInbox, newId, readBody } from './_lib.js';
 
-// GET  /api/sync  -> drains the agent inbox into the day map, returns { days, backlog }
-// PUT  /api/sync  -> replaces stored state with the posted { days, backlog }
+// GET  /api/sync  -> drains the agent inbox into the day map, returns { days, backlog, ideas }
+// PUT  /api/sync  -> replaces stored state with the posted { days, backlog, ideas }
+
+function storedIdeas(state) {
+  if (Array.isArray(state && state.ideas)) return state.ideas;
+  if (Array.isArray(state && state.likes)) return state.likes;
+  return [];
+}
 export default async function handler(req, res) {
   if (!authorize(req)) {
     res.status(401).json({ error: 'unauthorized' });
@@ -30,7 +36,12 @@ export default async function handler(req, res) {
         await putInbox([]);
       }
 
-      res.status(200).json({ days: state.days || {}, backlog: state.backlog || [] });
+      res.status(200).json({
+        days: state.days || {},
+        backlog: state.backlog || [],
+        // `likes` was this list's original key; read it forward so nothing is lost.
+        ideas: storedIdeas(state),
+      });
       return;
     }
 
@@ -38,7 +49,12 @@ export default async function handler(req, res) {
       const body = await readBody(req);
       const days = body && typeof body.days === 'object' && body.days ? body.days : {};
       const backlog = Array.isArray(body && body.backlog) ? body.backlog : [];
-      await putState({ days, backlog });
+      // A client running older JS omits the key entirely; keep what's stored rather
+      // than letting a stale tab wipe the list.
+      const ideas = Array.isArray(body && body.ideas)
+        ? body.ideas
+        : storedIdeas(await getState());
+      await putState({ days, backlog, ideas });
       res.status(200).json({ ok: true });
       return;
     }
