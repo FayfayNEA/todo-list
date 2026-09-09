@@ -996,6 +996,7 @@
       <div class="tray-hint">drag one onto the page &middot; corner arrows resize &amp; rotate &middot; double-click to take it off</div>
       <div class="tray-actions">
         <button class="tray-reset" onclick="triggerAddPolaroid()">add a polaroid</button>
+        <button class="tray-reset" onclick="restoreHiddenPins()">restore photos</button>
         <button class="tray-reset" id="stickerReset" onclick="resetStickerBoard()">clear the board</button>
       </div>
     </div>
@@ -2139,7 +2140,6 @@ const STICKER_PLACE_KEY = 'stickerPlacements';
 const STICKER_CATALOG = [
   ['crescent-moon',58,'celestial'],
   ['dawn',52,'celestial'],
-  ['little-sun',44,'celestial'],
   ['moon-fairy',56,'celestial'],
   ['star',44,'celestial'],
   ['star-hide',40,'celestial'],
@@ -2150,87 +2150,25 @@ const STICKER_CATALOG = [
   ['primrose-fairy',46,'fairies'],
   ['water-maiden',52,'fairies'],
   ['yellow-fairy',48,'fairies'],
-  ['face-art',46,'folk'],
-  ['flamenco',50,'folk'],
   ['goldfish-boy',54,'folk'],
-  ['guitar',48,'folk'],
   ['heart-cats',52,'folk'],
   ['jester-cat',54,'folk'],
   ['pierrot',56,'folk'],
   ['fawn',58,'creatures'],
   ['fish',50,'creatures'],
   ['lantern-moth',40,'creatures'],
-  ['lobster',48,'creatures'],
   ['mouse',46,'creatures'],
-  ['mussel',42,'creatures'],
-  ['oyster',44,'creatures'],
-  ['oyster-open',44,'creatures'],
-  ['red-coral',46,'creatures'],
-  ['sardine',44,'creatures'],
-  ['shell',44,'creatures'],
-  ['starfish',42,'creatures'],
-  ['starfish-orange',42,'creatures'],
   ['swans',62,'creatures'],
   ['wizard-rabbit',52,'creatures'],
   ['wolf',46,'creatures'],
-  ['blue-plate',44,'curios'],
   ['books',56,'curios'],
-  ['button',36,'curios'],
-  ['camera',44,'curios'],
-  ['carnation',44,'curios'],
   ['dark-hair',52,'curios'],
-  ['dark-lily',44,'curios'],
-  ['disco-ball',44,'curios'],
-  ['eight-ball',40,'curios'],
   ['heart-eye',40,'curios'],
   ['lips',42,'curios'],
-  ['red-bow',42,'curios'],
-  ['red-fan',46,'curios'],
-  ['red-flower',44,'curios'],
-  ['rug',44,'curios'],
-  ['we-want-beer',44,'curios'],
-  ['beer-bottle',44,'food'],
-  ['champagne',46,'food'],
-  ['coca-cola',46,'food'],
-  ['coke-bottle',42,'food'],
-  ['corona',44,'food'],
   ['guinness',46,'food'],
-  ['martini',44,'food'],
-  ['olives',40,'food'],
-  ['orange-slice',44,'food'],
-  ['paella',48,'food'],
   ['pasteis',46,'food'],
-  ['pasteis-two',46,'food'],
-  ['pomegranate',44,'food'],
-  ['sardine-tin',46,'food'],
-  ['sardine-tin-open',44,'food'],
-  ['seven-up',44,'food'],
-  ['stella',46,'food'],
   ['strawberries',48,'food'],
-  ['tomatoes',44,'food'],
-  ['wine',46,'food'],
-  ['azulejo',44,'travel'],
-  ['belem-tower',50,'travel'],
-  ['coast',46,'travel'],
-  ['dolce-vita',44,'travel'],
-  ['greece-fruit',42,'travel'],
-  ['greece-stamp',42,'travel'],
-  ['italia-500',42,'travel'],
-  ['italia-stamp',42,'travel'],
-  ['italy-lemons',46,'travel'],
-  ['lemon-stamp',44,'travel'],
-  ['lisbon-poster',46,'travel'],
-  ['london-bus',44,'travel'],
-  ['milano-stamp',44,'travel'],
-  ['naples-stamp',44,'travel'],
-  ['paris-stamp',42,'travel'],
-  ['pisa-stamp',42,'travel'],
-  ['portugal-tile',44,'travel'],
-  ['spain-flag',42,'travel'],
-  ['tile-pattern',44,'travel'],
   ['tram',56,'travel'],
-  ['vespa',50,'travel'],
-  ['yellow-tram',52,'travel'],
 ];
 
 const STICKER_THEMES = ['all', 'celestial', 'fairies', 'folk', 'creatures', 'curios', 'food', 'travel'];
@@ -2301,6 +2239,9 @@ function initStickers() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(STICKER_PLACE_KEY)); } catch (e) {}
   stickerPlacements = Array.isArray(saved) ? saved : seedStickerPlacements();
+  // A sticker that's been retired shouldn't leave a broken image on the board.
+  const known = new Set(STICKER_CATALOG.map(s => s[0]));
+  stickerPlacements = stickerPlacements.filter(p => known.has(p.name));
   const halfW = window.innerWidth / 2;
   stickerPlacements.forEach(p => {
     if (typeof p.dx !== 'number') { p.dx = Math.round((p.left || 0) - halfW); delete p.left; }
@@ -2755,16 +2696,42 @@ async function handleAddPolaroid(e) {
   renderExtraPins();
 }
 
+const HIDDEN_PINS_KEY = 'hiddenPolaroids';
+
+function hiddenPins() {
+  try { return new Set(JSON.parse(localStorage.getItem(HIDDEN_PINS_KEY)) || []); }
+  catch (e) { return new Set(); }
+}
+
+// The eight built-in photos live in the HTML, so "deleting" one hides it.
+// Reversible on purpose — "restore photos" brings them all back.
+function hidePin(pinId) {
+  const set = hiddenPins();
+  set.add(pinId);
+  try { localStorage.setItem(HIDDEN_PINS_KEY, JSON.stringify([...set])); } catch (e) {}
+  const el = findPin(pinId);
+  if (el) el.style.display = 'none';
+}
+
+function restoreHiddenPins() {
+  try { localStorage.removeItem(HIDDEN_PINS_KEY); } catch (e) {}
+  document.querySelectorAll('.moodboard .pin').forEach(p => { p.style.display = ''; });
+}
+
 function loadMoodboardPhotos() {
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(MOODBOARD_KEY) || '{}'); } catch (e) {}
   let positions = {};
   try { positions = JSON.parse(localStorage.getItem(MOODBOARD_POS_KEY) || '{}'); } catch (e) {}
+  const hidden = hiddenPins();
 
   document.querySelectorAll('.moodboard .pin').forEach((pin) => {
     const pinId = [...pin.classList].find((c) => /^p\d+$/.test(c));
     if (!pinId) return;
     pin.dataset.pinId = pinId;
+    pin.title = 'double-click to remove';
+    if (hidden.has(pinId)) pin.style.display = 'none';
+    pin.addEventListener('dblclick', () => hidePin(pinId));
     if (saved[pinId]) {
       const img = pin.querySelector('img');
       if (img) img.src = saved[pinId];
