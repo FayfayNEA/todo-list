@@ -97,31 +97,33 @@
     transform: rotate(var(--rot, 0deg)) scale(1.16);
     filter: drop-shadow(0 18px 26px rgba(60, 85, 105, 0.34));
   }
-  /* Resizing was scroll-only and invisible; this makes it something you can see. */
-  .sticker-grip {
+  /* Resizing was scroll-only and invisible; these make it something you can see.
+     Plain arrows rather than buttons, with a white halo so they read over busy art. */
+  .sticker-grip, .sticker-rotate {
     position: absolute;
-    right: -9px; bottom: -9px;
-    width: 18px; height: 18px;
-    border-radius: 50%;
-    background: var(--btn-blue);
-    border: 2px solid #fff;
-    box-shadow: 0 2px 6px rgba(40,70,95,0.45);
-    cursor: nwse-resize;
+    width: 16px; height: 16px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--btn-blue-hover);
+    font-size: 15px;
+    line-height: 1;
+    text-shadow: 0 0 3px #fff, 0 1px 2px rgba(255,255,255,0.95);
     opacity: 0;
     transform: scale(0.6);
     transition: opacity 0.15s ease, transform 0.15s cubic-bezier(.2,.8,.3,1.3);
-    display: flex; align-items: center; justify-content: center;
     touch-action: none;
+    user-select: none;
   }
-  .sticker-grip::before {
-    content: "";
-    width: 7px; height: 7px;
-    border-right: 2px solid #fff;
-    border-bottom: 2px solid #fff;
-    transform: translate(-1px, -1px);
-  }
+  .sticker-grip { right: -10px; bottom: -10px; cursor: nwse-resize; }
+  .sticker-grip::before { content: "\2921"; }        /* ⤡ diagonal resize */
+  .sticker-rotate { right: -10px; top: -10px; cursor: grab; font-size: 14px; }
+  .sticker-rotate::before { content: "\27F3"; }      /* ⟳ rotate */
+  .sticker-rotate:active { cursor: grabbing; }
   .sticker:hover .sticker-grip,
-  .sticker.resizing .sticker-grip { opacity: 1; transform: scale(1); }
+  .sticker:hover .sticker-rotate,
+  .sticker.resizing .sticker-grip,
+  .sticker.rotating .sticker-rotate { opacity: 1; transform: scale(1); }
+  .sticker.resizing, .sticker.rotating { animation: none; z-index: 60; }
+  .sticker.rotating .sticker-size { opacity: 1; }
   .sticker.resizing { animation: none; z-index: 60; }
   .sticker-size {
     position: absolute;
@@ -138,6 +140,21 @@
     pointer-events: none;
   }
   .sticker.resizing .sticker-size { opacity: 1; }
+  .theme-bar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .theme-chip {
+    padding: 5px 11px;
+    font-family: inherit; font-size: 11px;
+    color: var(--muted);
+    background: var(--card);
+    border: 1px solid var(--border-light);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: transform 0.15s cubic-bezier(.2,.8,.3,1.2), background 0.15s ease, color 0.15s ease;
+  }
+  .theme-chip:hover { transform: scale(1.06); color: var(--text); }
+  .theme-chip.active {
+    background: var(--btn-blue); border-color: var(--btn-blue); color: #fff;
+  }
   .sticker-tray { display: flex; flex-wrap: wrap; gap: 10px; }
   .tray-item {
     width: 96px; height: 96px;
@@ -665,7 +682,7 @@
     .wrap { background-image: none; }
     .content { background: rgba(240, 243, 246, 0.82); }
     .moodboard .sticker, .moodboard .pin { pointer-events: none; }
-    .sticker-grip, .sticker-size { display: none; }   /* board is background-only here */
+    .sticker-grip, .sticker-rotate, .sticker-size { display: none; }   /* board is background-only here */
     .moodboard .sticker:hover, .moodboard .pin:hover { animation: none; }
     .moodboard .sticker { transform: rotate(var(--rot, 0deg)) scale(0.55); }
     .moodboard .pin {
@@ -966,13 +983,14 @@
   <!-- STICKERS VIEW -->
   <div id="stickersView" class="tab-panel" style="display:none;">
     <div class="tray-top">
-      <div class="tray-hint">drag one onto the page &middot; scroll over it to resize &middot; double-click to take it off</div>
+      <div class="tray-hint">drag one onto the page &middot; corner arrows resize &amp; rotate &middot; double-click to take it off</div>
       <div class="tray-actions">
         <button class="tray-reset" onclick="triggerAddPolaroid()">add a polaroid</button>
         <button class="tray-reset" id="stickerReset" onclick="resetStickerBoard()">clear the board</button>
       </div>
     </div>
     <div class="mobile-only">on a phone these sit behind the page as decoration &mdash; open it on a computer to arrange them</div>
+    <div class="theme-bar" id="stickerThemes"></div>
     <div class="sticker-tray" id="stickerTray"></div>
   </div>
 
@@ -2107,13 +2125,23 @@ const STICKER_POS_KEY = 'stickerPositions';       // legacy: {st1:{left,top}}
 const STICKER_PLACE_KEY = 'stickerPlacements';
 
 // Every sticker in /stickers, with the size it gets when placed.
+// [name, size when placed, theme]
 const STICKER_CATALOG = [
-  ['wolf',46], ['moon-fairy',56], ['fawn',58], ['heart-eye',40], ['swans',62],
-  ['lips',42], ['yellow-fairy',48], ['mouse',46], ['dark-hair',52], ['dawn',52],
-  ['lantern-moth',40], ['sun',46], ['water-maiden',52], ['fish',50], ['primrose-fairy',46],
-  ['books',56], ['star-hide',40], ['flower-fairy',48], ['wizard-rabbit',52],
-  ['crescent-moon',58], ['star',44],
+  ['wolf',46,'creatures'],           ['moon-fairy',56,'celestial'],
+  ['fawn',58,'creatures'],           ['heart-eye',40,'curios'],
+  ['swans',62,'creatures'],          ['lips',42,'curios'],
+  ['yellow-fairy',48,'fairies'],     ['mouse',46,'creatures'],
+  ['dark-hair',52,'curios'],         ['dawn',52,'celestial'],
+  ['lantern-moth',40,'creatures'],   ['sun',46,'celestial'],
+  ['water-maiden',52,'fairies'],     ['fish',50,'creatures'],
+  ['primrose-fairy',46,'fairies'],   ['books',56,'curios'],
+  ['star-hide',40,'celestial'],      ['flower-fairy',48,'fairies'],
+  ['wizard-rabbit',52,'creatures'],  ['crescent-moon',58,'celestial'],
+  ['star',44,'celestial'],
 ];
+
+const STICKER_THEMES = ['all', 'celestial', 'fairies', 'creatures', 'curios'];
+let stickerTheme = 'all';
 
 // Where each one sits before anyone moves it: side of the card, and % down the page.
 // [side, position across the margin band (0 = beside the card, 1 = window edge), % down, tilt]
@@ -2254,6 +2282,57 @@ function attachStickerResize(el, grip, badge, p) {
   grip.addEventListener('dblclick', (e) => e.stopPropagation());   // don't remove the sticker
 }
 
+function setStickerRotation(el, badge, p, deg) {
+  let d = Math.round(deg) % 360;
+  if (d > 180) d -= 360;
+  if (d < -180) d += 360;
+  p.rot = d + 'deg';
+  el.style.setProperty('--rot', p.rot);
+  if (badge) badge.textContent = d + '°';
+}
+
+// Drag the top corner around the sticker's centre to spin it.
+function attachStickerRotate(el, spin, badge, p) {
+  let active = false, cx = 0, cy = 0, startAngle = 0, startRot = 0;
+
+  const angleTo = (e) => Math.atan2(e.clientY - cy, e.clientX - cx) * 180 / Math.PI;
+
+  spin.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const r = el.getBoundingClientRect();
+    cx = r.left + r.width / 2;
+    cy = r.top + r.height / 2;
+    startAngle = angleTo(e);
+    startRot = parseFloat(p.rot) || 0;
+    active = true;
+    el.classList.add('rotating');
+    setStickerRotation(el, badge, p, startRot);
+    spin.setPointerCapture(e.pointerId);
+  });
+
+  spin.addEventListener('pointermove', (e) => {
+    if (!active) return;
+    e.stopPropagation();
+    let next = startRot + (angleTo(e) - startAngle);
+    if (e.shiftKey) next = Math.round(next / 15) * 15;   // hold shift to snap
+    setStickerRotation(el, badge, p, next);
+  });
+
+  function end(e) {
+    if (!active) return;
+    active = false;
+    e.stopPropagation();
+    if (spin.hasPointerCapture(e.pointerId)) spin.releasePointerCapture(e.pointerId);
+    el.classList.remove('rotating');
+    saveStickerPlacements();
+  }
+  spin.addEventListener('pointerup', end);
+  spin.addEventListener('pointercancel', end);
+  spin.addEventListener('dblclick', (e) => e.stopPropagation());
+}
+
 function renderPlacedStickers() {
   const board = document.querySelector('.moodboard');
   if (!board) return;
@@ -2262,7 +2341,7 @@ function renderPlacedStickers() {
   stickerPlacements.forEach(p => {
     const el = document.createElement('div');
     el.className = 'sticker';
-    el.title = p.name.replace(/-/g, ' ') + ' — drag the corner or scroll to resize · double-click to remove';
+    el.title = p.name.replace(/-/g, ' ') + ' — corner arrows resize and rotate · scroll to resize · double-click to remove';
     el.style.setProperty('--rot', p.rot);
     el.style.setProperty('--size', p.size + 'px');
     el.style.left = Math.round(window.innerWidth / 2 + p.dx) + 'px';
@@ -2283,6 +2362,12 @@ function renderPlacedStickers() {
     grip.title = 'drag to resize';
     el.appendChild(grip);
     attachStickerResize(el, grip, badge, p);
+
+    const spin = document.createElement('div');
+    spin.className = 'sticker-rotate';
+    spin.title = 'drag to rotate';
+    el.appendChild(spin);
+    attachStickerRotate(el, spin, badge, p);
 
     el.addEventListener('dblclick', () => {
       stickerPlacements = stickerPlacements.filter(x => x.uid !== p.uid);
@@ -2387,11 +2472,31 @@ function resetStickerBoard() {
   renderPlacedStickers();
 }
 
+function renderStickerThemes() {
+  const bar = document.getElementById('stickerThemes');
+  if (!bar) return;
+  bar.innerHTML = '';
+  STICKER_THEMES.forEach(theme => {
+    const count = theme === 'all'
+      ? STICKER_CATALOG.length
+      : STICKER_CATALOG.filter(s => s[2] === theme).length;
+    const chip = document.createElement('button');
+    chip.className = 'theme-chip' + (theme === stickerTheme ? ' active' : '');
+    chip.textContent = theme + ' ' + count;
+    chip.onclick = () => { stickerTheme = theme; renderStickerThemes(); renderStickerTray(); };
+    bar.appendChild(chip);
+  });
+}
+
 function renderStickerTray() {
   const tray = document.getElementById('stickerTray');
   if (!tray) return;
+  renderStickerThemes();
   tray.innerHTML = '';
-  STICKER_CATALOG.forEach(([name, size]) => {
+  const shown = stickerTheme === 'all'
+    ? STICKER_CATALOG
+    : STICKER_CATALOG.filter(s => s[2] === stickerTheme);
+  shown.forEach(([name, size]) => {
     const tile = document.createElement('div');
     tile.className = 'tray-item';
     tile.dataset.name = name;
