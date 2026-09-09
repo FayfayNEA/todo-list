@@ -42,6 +42,7 @@
     padding: 28px 14px 60px;
     font-size: 13px;
     min-height: 100vh;
+    min-height: 100dvh;
     position: relative;
   }
   .wrap {
@@ -500,6 +501,13 @@
   }
   li.task-item.leaving { opacity: 0; transform: translateX(24px); }
   li.task-item.dragging { opacity: 0.4; }
+  /* A touch has to hold a row still before it picks up, so the row has to *look*
+     picked up — otherwise the only feedback is the page suddenly refusing to scroll. */
+  li.task-item.picked-up {
+    transform: scale(1.04);
+    border-color: var(--accent);
+    box-shadow: 0 10px 24px rgba(90,130,160,0.34);
+  }
   li.task-item.done { background: var(--highlight); border-color: var(--border); }
   li.task-item.done .label { text-decoration: line-through; color: var(--muted); }
 
@@ -559,6 +567,7 @@
     position: relative;
     width: min(90vw, 460px);
     max-height: 80vh;
+    max-height: 80dvh;
     overflow-y: auto;
     padding: 34px 20px 16px;
     background: var(--card);
@@ -733,6 +742,66 @@
     .date-chip { min-width: 52px; padding: 8px 6px; }
     .tray-item { width: 84px; height: 84px; }
     .tray-item img { width: 68px; height: 68px; }
+    /* The tray is a long grid, and the board is background-only here, so a finger
+       landing on a tile has to scroll the page rather than try to drag art around. */
+    .tray-item { touch-action: auto; }
+
+    /* viewport-fit=cover puts the page under the notch and the home bar unless we pad. */
+    body {
+      padding-left: max(10px, env(safe-area-inset-left));
+      padding-right: max(10px, env(safe-area-inset-right));
+      padding-bottom: max(40px, env(safe-area-inset-bottom));
+      /* A fixed, repeating background re-rasterises on every scroll frame on a phone. */
+      background-attachment: scroll;
+    }
+    /* An SVG-filter layer under mix-blend-mode repaints the whole card as you scroll,
+       and at this size the texture reads as nothing anyway. */
+    .grain { display: none; }
+    /* Thirty-odd drop-shadowed images behind the card is the other scroll cost. */
+    .moodboard .sticker { filter: none; }
+
+    /* Under 16px, iOS zooms the page in when you focus a field and never zooms back. */
+    .add-box textarea, .reflect-input, .sub-add, .auth-card input { font-size: 16px; }
+
+    /* Pop-outs sit high so the on-screen keyboard can't cover what you're typing into. */
+    .sub-pop { align-items: flex-start; padding: 12px 12px 24px; }
+    .sub-pop-card { margin-top: 6vh; width: min(94vw, 460px); max-height: 72dvh; }
+
+    /* Targets a fingertip can actually land on. */
+    .remove {
+      min-width: 36px; min-height: 32px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .strip-nav { padding: 10px 12px; font-size: 16px; }
+    .lightbox-traffic { gap: 10px; }
+    .lightbox-traffic .dot { width: 16px; height: 16px; }
+    .theme-chip { padding: 8px 14px; font-size: 12px; }
+    .tray-reset { padding: 9px 14px; font-size: 12px; }
+    /* Three buttons at a tappable size don't fit one phone-width row. */
+    .tray-actions { flex: 1 1 100%; flex-wrap: wrap; }
+    /* Every action it describes is a desktop one, and the note below says so. */
+    .tray-hint { display: none; }
+  }
+
+  /* Touch has no hover: styles meant as a hover preview stick after a tap instead,
+     and anything only revealed on hover can never be reached at all. */
+  @media (hover: none) {
+    * { -webkit-tap-highlight-color: transparent; }
+    li.task-item:not(.picked-up):hover, .sub-item:hover, .metrics-card:hover,
+    .tray-item:hover, .theme-chip:hover, .date-chip:not(.active):hover,
+    .tab:not(.active):hover, .checkbox:hover, .sub-item .sub-box:hover,
+    .strip-nav:hover, .tray-reset:hover, .add-row-outside button:hover,
+    .remove:hover {
+      transform: none;
+      box-shadow: none;
+    }
+    li.task-item:not(.picked-up):hover { border-color: var(--border-light); }
+    .pin:hover, .sticker:hover { animation: none; }
+    /* The × on a subtask only ever appeared on hover. */
+    .sub-item .sub-remove { opacity: 0.7; }
+    /* Holding a row picks it up; it must not also raise the text-selection UI. */
+    li.task-item { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+    .reflect-input, .sub-add, .add-box textarea { -webkit-user-select: text; user-select: text; }
   }
 
   @media (max-width: 929px) and (display-mode: browser) {
@@ -769,6 +838,7 @@
     display: block;
     max-width: min(80vw, 480px);
     max-height: min(70vh, 560px);
+    max-height: min(70dvh, 560px);
     width: auto; height: auto;
     border-radius: 10px;
     filter: sepia(0.12) saturate(0.9) contrast(1.02);
@@ -944,6 +1014,7 @@
       <div class="date-strip-scroll" id="dateStripScroll"></div>
       <button class="strip-nav" onclick="shiftStrip(1)">&rsaquo;</button>
     </div>
+    <div class="strip-hint mobile-only">hold a task for a moment, then drag it onto a day</div>
     <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
 
     <div class="add-box">
@@ -976,7 +1047,7 @@
       <div class="date-strip-scroll" id="dateStripScrollBacklog"></div>
       <button class="strip-nav" onclick="shiftStrip(1)">&rsaquo;</button>
     </div>
-    <div class="strip-hint">drag an item onto a day to schedule it</div>
+    <div class="strip-hint" id="backlogDragHint">drag an item onto a day to schedule it</div>
     <div class="add-box">
       <textarea id="backlogInput" rows="1" placeholder="add to backlog..."></textarea>
     </div>
@@ -1311,6 +1382,9 @@ function switchTab(tab) {
   if (tab === 'ideas') renderIdeas();
   if (tab === 'stickers') renderStickerTray();
   if (tab === 'backlog') { renderDateStrip(); renderBacklog(); }
+  // On a phone you're usually deep in a long list when you switch tabs; land at the
+  // top of the new one rather than in the middle of it.
+  bringDropTargetsIntoView();
 }
 
 // ---------- DATE STRIP ----------
@@ -1769,18 +1843,65 @@ function removeSubtask(itemId, subId) {
   refreshSubPop();
 }
 
+// A mouse and a finger want opposite things from the same small movement: with a
+// mouse it's obviously a drag, on a phone it's someone scrolling the list. So a touch
+// has to hold a row still for a moment before it picks up, and until it does the
+// browser keeps the gesture and scrolls as normal.
+const TOUCH_HOLD_MS = 320;
+const TOUCH_SLOP = 10;
+
+// Once a held row has picked up, the page has to stop scrolling under it. touch-action
+// can't be changed part-way through a gesture, so the move gets cancelled by hand — and
+// that needs a non-passive listener. It goes on only for the length of the drag: leaving
+// one on every row would make the browser check with us before every scroll frame.
+function blockTouchScroll(e) { if (e.cancelable) e.preventDefault(); }
+function holdPageStill(on) {
+  if (on) document.addEventListener('touchmove', blockTouchScroll, { passive: false });
+  else document.removeEventListener('touchmove', blockTouchScroll);
+}
+
+// The drop targets live at the top of the panel, which on a phone is usually scrolled
+// off. Bring them back before the finger starts moving, or there's nothing to drop on.
+function bringDropTargetsIntoView() {
+  const tabsRow = document.querySelector('.tabs');
+  if (!tabsRow) return;
+  const top = tabsRow.getBoundingClientRect().top;
+  if (top >= 0) return;
+  window.scrollBy({ top: top - 8 });
+}
+
 function attachDrag(li, onDrop, onBacklog, onTap) {
   let down = false;
   let dragging = false;
+  let armed = false;        // touch only: the hold finished, the row is picked up
+  let byTouch = false;
+  let holdTimer = null;
   let clone = null;
   let startX = 0, startY = 0;
   const THRESHOLD = 6;
 
+  function cancelHold() {
+    if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+  }
+
   li.addEventListener('pointerdown', (e) => {
     if (e.target.closest('.checkbox') || e.target.closest('.remove') || e.target.closest('.schedule-row')) return;
     down = true;
+    armed = false;
+    byTouch = e.pointerType !== 'mouse';
     startX = e.clientX; startY = e.clientY;
     try { li.setPointerCapture(e.pointerId); } catch (err) {}
+    if (!byTouch) return;
+    cancelHold();
+    holdTimer = setTimeout(() => {
+      holdTimer = null;
+      if (!down) return;
+      armed = true;
+      li.classList.add('picked-up');
+      holdPageStill(true);
+      bringDropTargetsIntoView();
+      if (navigator.vibrate) { try { navigator.vibrate(8); } catch (err) {} }
+    }, TOUCH_HOLD_MS);
   });
 
   function startDrag(e) {
@@ -1812,10 +1933,23 @@ function attachDrag(li, onDrop, onBacklog, onTap) {
   li.addEventListener('pointermove', (e) => {
     if (!down) return;
     if (!dragging) {
-      if (Math.abs(e.clientX - startX) > THRESHOLD || Math.abs(e.clientY - startY) > THRESHOLD) {
+      const far = Math.abs(e.clientX - startX) > THRESHOLD || Math.abs(e.clientY - startY) > THRESHOLD;
+      if (byTouch) {
+        if (!armed) {
+          // Still a finger on an un-held row: it's a scroll, so let go of it entirely.
+          if (Math.abs(e.clientX - startX) > TOUCH_SLOP || Math.abs(e.clientY - startY) > TOUCH_SLOP) {
+            cancelHold();
+            holdPageStill(false);
+            down = false;
+          }
+          return;
+        }
         startDrag(e);
+      } else if (far) {
+        startDrag(e);
+      } else {
+        return;
       }
-      return;
     }
     clone.style.left = (e.clientX - clone.offsetWidth / 2) + 'px';
     clone.style.top = (e.clientY - 20) + 'px';
@@ -1827,10 +1961,18 @@ function attachDrag(li, onDrop, onBacklog, onTap) {
 
   function endDrag(e) {
     const wasDown = down;
+    const wasArmed = armed;
+    cancelHold();
     down = false;
+    armed = false;
+    holdPageStill(false);
+    li.classList.remove('picked-up');
     if (!dragging) {
       // Pointer capture retargets the click to the li, so a plain tap is handled here.
-      if (wasDown && typeof onTap === 'function') onTap();
+      // pointercancel means the browser took the gesture over to scroll the page, which
+      // is never a tap — counting it was popping a card open on every scroll.
+      const moved = Math.abs(e.clientX - startX) > THRESHOLD || Math.abs(e.clientY - startY) > THRESHOLD;
+      if (wasDown && !wasArmed && !moved && e.type === 'pointerup' && typeof onTap === 'function') onTap();
       return;
     }
     dragging = false;
@@ -2465,7 +2607,14 @@ function renderPlacedStickers() {
 }
 
 let stickerResizeTimer = null;
+let boardW = window.innerWidth;
+let boardH = window.innerHeight;
 window.addEventListener('resize', () => {
+  // Scrolling a phone hides the URL bar, which fires resize with a small height change.
+  // Rebuilding thirty stickers there just makes the page stutter as you scroll.
+  const w = window.innerWidth, h = window.innerHeight;
+  if (w === boardW && Math.abs(h - boardH) < 140) return;
+  boardW = w; boardH = h;
   clearTimeout(stickerResizeTimer);
   stickerResizeTimer = setTimeout(() => { renderPlacedStickers(); repositionPins(); }, 120);
 });
@@ -2565,9 +2714,16 @@ function renderStickerTray() {
   });
 }
 
+// Below this the board is background decoration, not something you arrange.
+function boardIsBackgroundOnly() {
+  return window.matchMedia('(max-width: 929px)').matches;
+}
+
 // Drag a tile out of the tray and drop it anywhere on the page.
 function startTrayDrag(e, name, size) {
   if (e.button !== 0) return;
+  // A finger on a tile has to scroll the tray: there's nowhere to drop art to here.
+  if (e.pointerType !== 'mouse' && boardIsBackgroundOnly()) return;
   e.preventDefault();
 
   const ghost = document.createElement('div');
@@ -2824,7 +2980,8 @@ function attachPinDrag(pin, pinId, opts = {}) {
     dragging = false;
     if (pin.hasPointerCapture(e.pointerId)) pin.releasePointerCapture(e.pointerId);
     if (!moved) {
-      if (opts.onTap) opts.onTap();
+      // A cancelled pointer is the browser taking over to scroll, not a tap.
+      if (opts.onTap && e.type === 'pointerup') opts.onTap();
       return;
     }
     pin.classList.remove('dragging');
@@ -2971,6 +3128,12 @@ function handleMoodboardFile(e) {
     try { localStorage.setItem(MOODBOARD_KEY, JSON.stringify(saved)); } catch (e) {}
   };
   reader.readAsDataURL(file);
+}
+
+// The gesture differs by input: a mouse drags straight away, a finger has to hold first.
+if (window.matchMedia('(hover: none)').matches) {
+  const hint = document.getElementById('backlogDragHint');
+  if (hint) hint.textContent = 'hold an item for a moment, then drag it onto a day';
 }
 
 document.getElementById('moodboardFileInput').addEventListener('change', handleMoodboardFile);
