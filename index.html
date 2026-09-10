@@ -327,7 +327,7 @@
   .save-status {
     font-size: 11px;
     color: var(--muted);
-    margin: 0 0 16px;
+    margin: 0 0 3px;
     display: inline-block;
     text-transform: none;
     letter-spacing: 0.05em;
@@ -708,8 +708,38 @@
   .auth-card button:hover { background: var(--btn-blue-hover); border-color: var(--btn-blue-hover); }
   .auth-card .err { color: var(--muted); min-height: 14px; font-size: 11px; }
   .auth-card .err.bad { color: var(--danger); }
+  .auth-card input[hidden] { display: none; }
+  .auth-switch {
+    margin-top: 12px; text-align: center;
+    font-size: 11px; color: var(--muted); cursor: pointer;
+    letter-spacing: 0.03em;
+  }
+  .auth-switch:hover { color: var(--text); text-decoration: underline; }
+
+  .account-line { font-size: 10px; color: var(--muted); margin: 6px 0 14px; opacity: 0.85; letter-spacing: 0.04em; }
+  .account-line:empty { display: none; }
+  .account-line .account-link { cursor: pointer; text-decoration: underline; }
+  .account-line .account-link:hover { color: var(--text); }
+  .api-token { display: flex; gap: 6px; align-items: center; margin: -8px 0 14px; }
+  .api-token[hidden] { display: none; }
+  .api-token input {
+    flex: 1 1 auto; min-width: 0;
+    font-family: inherit; font-size: 10px; color: var(--muted);
+    background: var(--bg); border: 1px solid var(--border-light);
+    border-radius: 6px; padding: 5px 7px;
+  }
+  .api-token button {
+    flex: 0 0 auto;
+    font-family: inherit; font-size: 10px; color: var(--muted);
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 9px; cursor: pointer;
+  }
+  .api-token button:hover { color: var(--text); }
 
   .mobile-only { display: none; font-size: 11px; color: var(--muted); margin-bottom: 10px; }
+  /* The polaroids in this page are the owner's own photos; another account's board
+     starts bare and fills up with theirs. */
+  body.guest-board .moodboard .pin:not(.extra) { display: none; }
   /* Below this the card fills the width, so there's no margin for the board to live in.
      Rather than drop it, shrink it and tuck it behind the card as soft wallpaper —
      non-interactive, since dragging tiny art around a phone screen isn't worth it. */
@@ -762,6 +792,7 @@
 
     /* Under 16px, iOS zooms the page in when you focus a field and never zooms back. */
     .add-box textarea, .reflect-input, .sub-add, .auth-card input { font-size: 16px; }
+    .api-token input { font-size: 16px; }
 
     /* Pop-outs sit high so the on-screen keyboard can't cover what you're typing into. */
     .sub-pop { align-items: flex-start; padding: 12px 12px 24px; }
@@ -894,13 +925,19 @@
 <body>
 <div class="auth-gate" id="authGate" hidden>
   <div class="auth-card">
-    <h2>failenn playground</h2>
-    <p>enter your passphrase to sync this checklist across your devices.</p>
-    <input type="text" id="authGateInput" autocomplete="off" autocapitalize="none"
-           autocorrect="off" spellcheck="false" inputmode="text"
-           placeholder="passphrase" onkeydown="if(event.key==='Enter')submitAuthGate()">
+    <h2 id="authTitle">welcome back</h2>
+    <p id="authBlurb">sign in to pick your checklist up where you left it.</p>
+    <input type="email" id="authEmail" autocomplete="email" autocapitalize="none"
+           autocorrect="off" spellcheck="false" inputmode="email"
+           placeholder="email" onkeydown="if(event.key==='Enter')submitAuth()">
+    <input type="password" id="authPassword" autocomplete="current-password"
+           placeholder="password" onkeydown="if(event.key==='Enter')submitAuth()">
+    <input type="text" id="authInvite" autocomplete="off" autocapitalize="none"
+           autocorrect="off" spellcheck="false"
+           placeholder="invite code" hidden onkeydown="if(event.key==='Enter')submitAuth()">
     <div class="err" id="authGateMsg"></div>
-    <button onclick="submitAuthGate()">unlock</button>
+    <button id="authSubmit" onclick="submitAuth()">sign in</button>
+    <div class="auth-switch" id="authSwitch" onclick="toggleAuthMode()">no account yet? make one</div>
   </div>
 </div>
 <div class="moodboard">
@@ -997,6 +1034,11 @@
       <div class="save-status" id="saveStatus" onclick="retrySave()">saved</div>
     </div>
     <input type="date" class="strip-jump" onchange="jumpToDate(this.value)" title="jump to date">
+  </div>
+  <div class="account-line" id="accountLine"></div>
+  <div class="api-token" id="apiTokenRow" hidden>
+    <input id="apiTokenInput" readonly onclick="this.select()">
+    <button id="apiTokenCopy" onclick="copyApiToken()">copy</button>
   </div>
 
   <div class="tabs">
@@ -1110,68 +1152,243 @@
 </div>
 
 <script>
-// ---------- STORAGE ----------
-// Syncs to a small server-side store (Vercel Blob) via /api, so the checklist
-// follows you across devices and your agents can post priorities into it.
-// A localStorage copy is kept as an offline cache / fallback.
-const CACHE_KEY = 'tracker:cache:v3';
-const AUTH_KEY = 'tracker:key:v1';
-let apiKey = null;
+// ---------- ACCOUNTS ----------
+// Every account has its own list on the server (Vercel Blob) behind /api, so a checklist
+// follows you across your devices and your agents can post priorities into it. The token
+// in localStorage is what says which account this browser is signed into. A localStorage
+// copy of the list is kept per account as an offline cache / fallback.
+const CACHE_BASE = 'tracker:cache:v3';
+const TOKEN_KEY = 'tracker:token:v1';
+const ACCOUNT_KEY = 'tracker:account:v1';
+const LEGACY_KEY = 'tracker:key:v1';        // where the single shared passphrase used to live
+let token = null;
+let account = readAccount();
+let authMode = 'login';
 
-function getKey() {
-  if (apiKey) return apiKey;
-  // Allow a one-time magic link: ?key=... (stored, then stripped from the URL)
+function readAccount() {
+  try { return JSON.parse(localStorage.getItem(ACCOUNT_KEY)) || null; } catch (e) { return null; }
+}
+function writeAccount(a) {
   try {
+    if (a) localStorage.setItem(ACCOUNT_KEY, JSON.stringify(a));
+    else localStorage.removeItem(ACCOUNT_KEY);
+  } catch (e) {}
+}
+
+// Two people on one browser must not read each other's list. The account this app was
+// originally built for keeps every unsuffixed key, so its cache, photos and arrangement
+// carry over untouched; everyone else gets a namespace of their own.
+function ownersView() { return !account || account.isOwner; }
+function nsKey(base) { return ownersView() ? base : base + '::' + account.email; }
+function cacheKey() { return nsKey(CACHE_BASE); }
+
+function getToken() {
+  if (token) return token;
+  try {
+    // Allow a one-time magic link: ?key=... (stored, then stripped from the URL)
     const p = new URLSearchParams(location.search).get('key');
     if (p) {
-      apiKey = p.trim().toLowerCase();
-      try { localStorage.setItem(AUTH_KEY, apiKey); } catch (e) {}
+      token = p.trim();
+      try { localStorage.setItem(TOKEN_KEY, token); } catch (e) {}
       history.replaceState(null, '', location.pathname);
-      return apiKey;
+      return token;
     }
   } catch (e) {}
-  try { apiKey = localStorage.getItem(AUTH_KEY) || null; } catch (e) {}
-  return apiKey;
+  // The old passphrase is read forward: a browser that had one stays signed in.
+  try { token = localStorage.getItem(TOKEN_KEY) || localStorage.getItem(LEGACY_KEY) || null; } catch (e) {}
+  return token;
 }
-function clearKey() {
-  apiKey = null;
-  try { localStorage.removeItem(AUTH_KEY); } catch (e) {}
+function clearToken() {
+  token = null;
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(LEGACY_KEY);
+  } catch (e) {}
 }
+// True while this browser is still running on the pre-accounts passphrase, which is the
+// one case where an unsuffixed cache is known to belong to whoever is signed in.
+function legacySession() {
+  try { return !localStorage.getItem(TOKEN_KEY) && !!localStorage.getItem(LEGACY_KEY); } catch (e) { return false; }
+}
+
+// ---------- SIGN IN / OUT ----------
 function showAuthGate(msg, bad) {
   const gate = document.getElementById('authGate');
   if (!gate) return;
   gate.hidden = false;
-  const err = document.getElementById('authGateMsg');
-  if (err) {
-    err.textContent = msg || '';
-    err.className = 'err' + (bad ? ' bad' : '');
-  }
-  const input = document.getElementById('authGateInput');
+  renderAuthMode();
+  setAuthMsg(msg, bad);
+  const input = document.getElementById('authEmail');
   if (input) input.focus();
 }
 function hideAuthGate() {
   const gate = document.getElementById('authGate');
   if (gate) gate.hidden = true;
 }
-function submitAuthGate() {
-  const input = document.getElementById('authGateInput');
-  const val = (input && input.value || '').trim().toLowerCase();
-  if (!val) return;
-  apiKey = val;
-  try { localStorage.setItem(AUTH_KEY, val); } catch (e) {}
-  if (input) input.value = '';
+function setAuthMsg(msg, bad) {
+  const err = document.getElementById('authGateMsg');
+  if (!err) return;
+  err.textContent = msg || '';
+  err.className = 'err' + (bad ? ' bad' : '');
+}
+function toggleAuthMode() {
+  authMode = authMode === 'signup' ? 'login' : 'signup';
+  setAuthMsg('');
+  renderAuthMode();
+  const input = document.getElementById('authEmail');
+  if (input) input.focus();
+}
+function renderAuthMode() {
+  const signup = authMode === 'signup';
+  const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+  set('authTitle', signup ? 'make an account' : 'welcome back');
+  set('authBlurb', signup
+    ? 'your own checklist, synced across your devices. you need the invite code from whoever sent you this.'
+    : 'sign in to pick your checklist up where you left it.');
+  set('authSubmit', signup ? 'create account' : 'sign in');
+  set('authSwitch', signup ? 'already have an account? sign in' : 'no account yet? make one');
+  const invite = document.getElementById('authInvite');
+  if (invite) invite.hidden = !signup;
+}
+
+async function submitAuth() {
+  const email = (document.getElementById('authEmail').value || '').trim();
+  const password = document.getElementById('authPassword').value || '';
+  const invite = (document.getElementById('authInvite').value || '').trim();
+  if (!email || !password) { setAuthMsg('email and password, please', true); return; }
+
+  const btn = document.getElementById('authSubmit');
+  btn.disabled = true;
+  btn.textContent = authMode === 'signup' ? 'creating...' : 'signing in...';
+  setAuthMsg('');
+  try {
+    const res = await fetch('/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: authMode, email, password, invite }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.token) {
+      setAuthMsg(data.error || "that didn't work", true);
+      return;
+    }
+    signInWith(data);
+  } catch (e) {
+    setAuthMsg("couldn't reach the server — try again", true);
+  } finally {
+    btn.disabled = false;
+    renderAuthMode();
+  }
+}
+
+function signInWith(data) {
+  token = data.token;
+  account = data.account || null;
+  try { localStorage.setItem(TOKEN_KEY, token); } catch (e) {}
+  try { localStorage.removeItem(LEGACY_KEY); } catch (e) {}
+  writeAccount(account);
+  // Whatever the last account left in memory is not this one's.
+  daysMap = {}; backlog = []; ideas = [];
+  document.getElementById('authPassword').value = '';
+  document.getElementById('authInvite').value = '';
   hideAuthGate();
+  applyBoardOwnership();
+  renderAccountLine();
   loadAll();
 }
+
+function signOut() {
+  // The offline copy goes too: on a shared computer the next person must not find it.
+  try { localStorage.removeItem(cacheKey()); } catch (e) {}
+  clearToken();
+  account = null;
+  writeAccount(null);
+  daysMap = {}; backlog = []; ideas = [];
+  currentDate = todayStr();
+  renderAll();
+  renderAccountLine();
+  authMode = 'login';
+  showAuthGate('');
+}
+
+// The server is the authority on who a token belongs to; a stale local copy is corrected
+// here, on every sync.
+function applyAccount(a) {
+  if (!a) return;
+  account = {
+    email: a.email || (account && account.email) || null,
+    isOwner: !!a.isOwner,
+    apiToken: a.apiToken || (account && account.apiToken) || null,
+  };
+  writeAccount(account);
+  applyBoardOwnership();
+  renderAccountLine();
+}
+
+function renderAccountLine() {
+  const el = document.getElementById('accountLine');
+  if (!el) return;
+  el.innerHTML = '';
+  const row = document.getElementById('apiTokenRow');
+  if (!getToken()) { if (row) row.hidden = true; return; }
+
+  const who = document.createElement('span');
+  who.textContent = account && account.email ? account.email : 'signed in on this device';
+  el.appendChild(who);
+
+  const link = (text, onClick) => {
+    el.appendChild(document.createTextNode(' · '));
+    const a = document.createElement('span');
+    a.className = 'account-link';
+    a.textContent = text;
+    a.onclick = onClick;
+    el.appendChild(a);
+  };
+  if (account && account.apiToken) link('agent token', toggleApiToken);
+  link('log out', signOut);
+}
+
+// The token an agent posts with. Shown on demand rather than sitting on screen, since
+// anyone who reads it can write to this list.
+function toggleApiToken() {
+  const row = document.getElementById('apiTokenRow');
+  const input = document.getElementById('apiTokenInput');
+  if (!row || !input || !account || !account.apiToken) return;
+  row.hidden = !row.hidden;
+  if (row.hidden) return;
+  input.value = account.apiToken;
+  input.focus();
+  input.select();
+}
+
+function copyApiToken() {
+  const input = document.getElementById('apiTokenInput');
+  const btn = document.getElementById('apiTokenCopy');
+  if (!input) return;
+  input.select();
+  const done = () => { if (btn) { btn.textContent = 'copied'; setTimeout(() => { btn.textContent = 'copy'; }, 1400); } };
+  if (navigator.clipboard) navigator.clipboard.writeText(input.value).then(done, () => {});
+  else { try { document.execCommand('copy'); done(); } catch (e) {} }
+}
+
+// The photos baked into this page belong to the account this app was built for. Anyone
+// else starts with a bare board and adds their own. Hidden rather than removed, so
+// switching accounts in one session puts them back.
+function applyBoardOwnership() {
+  document.body.classList.toggle('guest-board', !ownersView());
+}
+
 function readCache() {
+  // Without knowing whose session this is, an offline copy could belong to someone else.
+  if (!account && !legacySession()) return null;
   try {
-    const raw = localStorage.getItem(CACHE_KEY);
+    const raw = localStorage.getItem(cacheKey());
     if (raw) return JSON.parse(raw);
   } catch (e) {}
   return null;
 }
 function writeCache() {
-  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ days: daysMap, backlog, ideas })); } catch (e) {}
+  try { localStorage.setItem(cacheKey(), JSON.stringify({ days: daysMap, backlog, ideas })); } catch (e) {}
 }
 
 let daysMap = {};
@@ -1224,7 +1441,7 @@ function queuePush() {
 
 async function pushState() {
   pushTimer = null;
-  const key = getKey();
+  const key = getToken();
   if (!key) { setSaveStatus('offline'); showAuthGate(''); return; }
   try {
     const res = await fetch('/api/sync', {
@@ -1232,7 +1449,7 @@ async function pushState() {
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
       body: JSON.stringify({ days: daysMap, backlog, ideas })
     });
-    if (res.status === 401) { clearKey(); pushFailed = true; setSaveStatus('error'); showAuthGate('that passphrase was rejected. try again.', true); return; }
+    if (res.status === 401) { clearToken(); pushFailed = true; setSaveStatus('error'); showAuthGate('that session has expired — sign in again.', true); return; }
     if (!res.ok) throw new Error('HTTP ' + res.status);
     pushFailed = false;
     setSaveStatus('saved');
@@ -1273,11 +1490,12 @@ async function loadAll() {
   const cached = readCache();
   if (cached) { applyState(cached); renderAll(); }
 
-  const key = getKey();
+  const key = getToken();
   if (!key) {
     if (!cached) { seedDays(); backlog = seedBacklog(); }
     setSaveStatus('offline');
     renderAll();
+    renderAccountLine();
     showAuthGate('');
     return;
   }
@@ -1285,16 +1503,20 @@ async function loadAll() {
   try {
     const res = await fetch('/api/sync', { headers: { 'Authorization': 'Bearer ' + key } });
     if (res.status === 401) {
-      clearKey();
-      if (!cached) { seedDays(); backlog = seedBacklog(); }
+      clearToken();
+      account = null;
+      writeAccount(null);
+      daysMap = {}; backlog = []; ideas = [];
       setSaveStatus('error');
       renderAll();
-      showAuthGate('that passphrase was rejected. try again.', true);
+      renderAccountLine();
+      showAuthGate('that session has expired — sign in again.', true);
       return;
     }
     if (!res.ok) throw new Error('HTTP ' + res.status);
     hideAuthGate();
     const state = await res.json();
+    applyAccount(state.account);
 
     const serverEmpty = !state || ((!state.days || Object.keys(state.days).length === 0) && (!state.backlog || state.backlog.length === 0));
     if (serverEmpty && !cached) {
@@ -1322,52 +1544,27 @@ async function loadAll() {
 
 // Pull in anything agents posted while the app was open / on another device.
 async function refreshFromServer() {
-  const key = getKey();
+  const key = getToken();
   if (!key || pushTimer) return;
   try {
     const res = await fetch('/api/sync', { headers: { 'Authorization': 'Bearer ' + key } });
     if (!res.ok) return;
     const state = await res.json();
+    applyAccount(state.account);
     if (applyState(state)) { writeCache(); renderAll(); if (saveState !== 'saving') setSaveStatus('saved'); }
   } catch (e) {}
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshFromServer(); });
 window.addEventListener('focus', refreshFromServer);
 
+// A brand new account opens on an empty day. What used to be here was one person's real
+// task list, which is not what someone else's first sign-in should show them.
 function seedDays() {
-  const today = todayStr();
-  const tomorrow = addDaysToStr(today, 1);
   daysMap = {};
-  daysMap[today] = [
-    mk('Check SDK for outstanding updates/tweaks', 'work'),
-    mk('Change "Identity Verified" to "Palm Verified" in SDK', 'work'),
-    mk('Add either-hand-first support to SDK', 'work'),
-    mk('Flag either-hand-first decision to Giorgio', 'work'),
-    mk('Submit SDK changes to Tongliang', 'work'),
-    mk("Apply liveness check changes (Giorgia's flags)", 'work'),
-    mk('Build demo mode: page, settings, demo button', 'work'),
-    mk('Build camera demo flow', 'work'),
-    mk('Build reverify flow (all screens + email)', 'work'),
-    mk('Push liveness (if SDK ready)', 'work'),
-    mk('Add HTML microinteraction for button to Figma', 'work'),
-    mk('Compile feedback for Venice', 'work'),
-    mk('Redesign email for authentication', 'work'),
-    mk('Call Vanguard', 'personal'),
-    mk("Call Iris' groomer, reschedule for next week", 'personal'),
-    mk('Call the spa', 'personal'),
-    mk("Call Iris's vet", 'personal'),
-  ];
-  daysMap[tomorrow] = [ mk('Start redesign of the dots', 'work') ];
+  ensureDay(todayStr());
 }
 function seedBacklog() {
-  return [
-    mk('Overhaul toasts (Giorgia)', 'work'),
-    mk('Error states, how might we', 'work'),
-    mk('Start Notion doc: 3-question survey for users', 'work'),
-    mk('Flag animation gap with Georgia, find an animator', 'work'),
-    mk('Go through metrics and Charlie\u2019s data to find fixes', 'work'),
-    mk('Build metrics on palm outline: drop-off point, reset count, alignment struggles, time to connect dots', 'work'),
-  ];
+  return [];
 }
 
 // ---------- TABS ----------
@@ -2800,12 +2997,12 @@ const EXTRA_PINS_KEY = 'extraPolaroids';
 let extraPins = [];
 
 function saveExtraPins() {
-  try { localStorage.setItem(EXTRA_PINS_KEY, JSON.stringify(extraPins)); }
+  try { localStorage.setItem(nsKey(EXTRA_PINS_KEY), JSON.stringify(extraPins)); }
   catch (e) { alert("couldn't save that photo — the browser's storage for this site is full."); }
 }
 
 function loadExtraPins() {
-  try { extraPins = JSON.parse(localStorage.getItem(EXTRA_PINS_KEY)) || []; } catch (e) { extraPins = []; }
+  try { extraPins = JSON.parse(localStorage.getItem(nsKey(EXTRA_PINS_KEY))) || []; } catch (e) { extraPins = []; }
   renderExtraPins();
 }
 
@@ -2889,7 +3086,7 @@ function addPinRemoveButton(pin, onRemove) {
 const HIDDEN_PINS_KEY = 'hiddenPolaroids';
 
 function hiddenPins() {
-  try { return new Set(JSON.parse(localStorage.getItem(HIDDEN_PINS_KEY)) || []); }
+  try { return new Set(JSON.parse(localStorage.getItem(nsKey(HIDDEN_PINS_KEY))) || []); }
   catch (e) { return new Set(); }
 }
 
@@ -2898,21 +3095,21 @@ function hiddenPins() {
 function hidePin(pinId) {
   const set = hiddenPins();
   set.add(pinId);
-  try { localStorage.setItem(HIDDEN_PINS_KEY, JSON.stringify([...set])); } catch (e) {}
+  try { localStorage.setItem(nsKey(HIDDEN_PINS_KEY), JSON.stringify([...set])); } catch (e) {}
   const el = findPin(pinId);
   if (el) el.style.display = 'none';
 }
 
 function restoreHiddenPins() {
-  try { localStorage.removeItem(HIDDEN_PINS_KEY); } catch (e) {}
+  try { localStorage.removeItem(nsKey(HIDDEN_PINS_KEY)); } catch (e) {}
   document.querySelectorAll('.moodboard .pin').forEach(p => { p.style.display = ''; });
 }
 
 function loadMoodboardPhotos() {
   let saved = {};
-  try { saved = JSON.parse(localStorage.getItem(MOODBOARD_KEY) || '{}'); } catch (e) {}
+  try { saved = JSON.parse(localStorage.getItem(nsKey(MOODBOARD_KEY)) || '{}'); } catch (e) {}
   let positions = {};
-  try { positions = JSON.parse(localStorage.getItem(MOODBOARD_POS_KEY) || '{}'); } catch (e) {}
+  try { positions = JSON.parse(localStorage.getItem(nsKey(MOODBOARD_POS_KEY)) || '{}'); } catch (e) {}
   const hidden = hiddenPins();
 
   document.querySelectorAll('.moodboard .pin').forEach((pin) => {
@@ -2938,7 +3135,7 @@ function loadMoodboardPhotos() {
 // Pins are draggable; a pointer that barely moves counts as a click and opens the lightbox.
 // `opts.onTap` is optional: stickers are drag-only, pins open the lightbox.
 function attachPinDrag(pin, pinId, opts = {}) {
-  const storageKey = opts.storageKey || MOODBOARD_POS_KEY;
+  const storageKey = opts.storageKey || nsKey(MOODBOARD_POS_KEY);
   let startX = 0, startY = 0, originLeft = 0, originTop = 0, moved = false, dragging = false;
 
   pin.addEventListener('pointerdown', (e) => {
@@ -3123,9 +3320,9 @@ function handleMoodboardFile(e) {
     const lightboxImg = document.getElementById('photoLightboxImg');
     if (lightboxImg) lightboxImg.src = dataUrl;
     let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(MOODBOARD_KEY) || '{}'); } catch (e) {}
+    try { saved = JSON.parse(localStorage.getItem(nsKey(MOODBOARD_KEY)) || '{}'); } catch (e) {}
     saved[pendingPinId] = dataUrl;
-    try { localStorage.setItem(MOODBOARD_KEY, JSON.stringify(saved)); } catch (e) {}
+    try { localStorage.setItem(nsKey(MOODBOARD_KEY), JSON.stringify(saved)); } catch (e) {}
   };
   reader.readAsDataURL(file);
 }
@@ -3140,7 +3337,9 @@ document.getElementById('moodboardFileInput').addEventListener('change', handleM
 document.getElementById('addPolaroidInput').addEventListener('change', handleAddPolaroid);
 loadMoodboardPhotos();
 loadExtraPins();
+applyBoardOwnership();
 initStickers();
+renderAccountLine();
 
 loadAll();
 </script>

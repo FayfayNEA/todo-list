@@ -1,4 +1,4 @@
-import { authorize, getState, putState, getInbox, putInbox, newId, readBody } from './_lib.js';
+import { authorize, accountFor, getState, putState, getInbox, putInbox, newId, readBody } from './_lib.js';
 
 // GET  /api/sync  -> drains the agent inbox into the day map, returns { days, backlog, ideas }
 // PUT  /api/sync  -> replaces stored state with the posted { days, backlog, ideas }
@@ -9,15 +9,17 @@ function storedIdeas(state) {
   return [];
 }
 export default async function handler(req, res) {
-  if (!authorize(req)) {
+  const auth = authorize(req);
+  if (!auth) {
     res.status(401).json({ error: 'unauthorized' });
     return;
   }
+  const uid = auth.userId;
 
   try {
     if (req.method === 'GET') {
-      const state = await getState();
-      const inbox = await getInbox();
+      const state = await getState(uid);
+      const inbox = await getInbox(uid);
 
       if (Array.isArray(inbox) && inbox.length) {
         state.days = state.days || {};
@@ -32,8 +34,8 @@ export default async function handler(req, res) {
             category: entry.category === 'personal' ? 'personal' : 'work',
           });
         }
-        await putState(state);
-        await putInbox([]);
+        await putState(uid, state);
+        await putInbox(uid, []);
       }
 
       res.status(200).json({
@@ -41,6 +43,9 @@ export default async function handler(req, res) {
         backlog: state.backlog || [],
         // `likes` was this list's original key; read it forward so nothing is lost.
         ideas: storedIdeas(state),
+        // Who this token belongs to: the app shows it, and uses it to tell whose
+        // board it is looking at.
+        account: accountFor(auth),
       });
       return;
     }
@@ -53,8 +58,8 @@ export default async function handler(req, res) {
       // than letting a stale tab wipe the list.
       const ideas = Array.isArray(body && body.ideas)
         ? body.ideas
-        : storedIdeas(await getState());
-      await putState({ days, backlog, ideas });
+        : storedIdeas(await getState(uid));
+      await putState(uid, { days, backlog, ideas });
       res.status(200).json({ ok: true });
       return;
     }
