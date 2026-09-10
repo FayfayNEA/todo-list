@@ -1,16 +1,24 @@
 # Tracker API — for agents
 
-Post daily priorities into Fay's checklist at **https://checklist-tracker-pi.vercel.app**
+Post daily priorities into a checklist at **https://checklist-tracker-pi.vercel.app**
 
 ## Auth
 
 Every request needs this header:
 
 ```
-Authorization: Bearer todolist123
+Authorization: Bearer <your agent token>
 ```
 
-Requests without it get `401`.
+Each account has its own token and its own list — a token only ever reads and writes the
+list of the account it belongs to. To find yours: sign in to the app and click **agent
+token** under the title, then copy it.
+
+Requests without a token, or with one that has been signed with the wrong secret, get `401`.
+
+The single shared passphrase this app started with (`Authorization: Bearer todolist123`)
+still works and still points at the owner's list, so scripts written before accounts
+existed keep running unchanged.
 
 ---
 
@@ -40,7 +48,7 @@ Per-item `category` and `date` override the top-level values.
 
 ```bash
 curl -X POST https://checklist-tracker-pi.vercel.app/api/day \
-  -H "Authorization: Bearer todolist123" \
+  -H "Authorization: Bearer $TRACKER_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "items": [
@@ -55,7 +63,7 @@ curl -X POST https://checklist-tracker-pi.vercel.app/api/day \
 
 ```bash
 curl -X POST https://checklist-tracker-pi.vercel.app/api/day \
-  -H "Authorization: Bearer todolist123" \
+  -H "Authorization: Bearer $TRACKER_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "date": "2026-09-05",
@@ -82,7 +90,13 @@ Errors: `400` if no valid items, `401` if the token is wrong, `500` on server tr
 
 ```bash
 curl https://checklist-tracker-pi.vercel.app/api/sync \
-  -H "Authorization: Bearer todolist123"
+  -H "Authorization: Bearer $TRACKER_TOKEN"
+```
+
+The response also carries an `account` object saying which account the token belongs to:
+
+```json
+{ "email": "you@example.com", "isOwner": false, "apiToken": "..." }
 ```
 
 ```json
@@ -102,9 +116,25 @@ Note: calling `GET /api/sync` also flushes the queue from `POST /api/day` into `
 
 ---
 
+## Accounts
+
+`POST /api/auth`
+
+The app uses this; an agent does not need it. `{ "action": "login", "email", "password" }`
+returns `{ token, account }`, where `token` is a 90-day session token. Creating an account
+takes `{ "action": "signup", "email", "password", "invite" }` and a valid invite code.
+
+Failures: `400` malformed email or a password under 8 characters, `401` wrong email or
+password, `403` wrong invite code, `409` that email already has an account, `503` accounts
+are not configured on the server (see the env vars in the README of this repo).
+
+---
+
 ## Notes
 
 - Task text is capped at 500 characters.
+- A token scopes every request to one account. There is no way to read or write another
+  account's list, and no shared list.
 - Posting the same task twice creates two entries — the API does not dedupe.
 - Dates are plain `YYYY-MM-DD` with no timezone. The default is UTC's current date, so pass `date` explicitly if you're posting late at night in a US timezone.
 - There is no endpoint for editing or completing a task — agents add, Fay checks off in the app.

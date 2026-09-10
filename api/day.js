@@ -5,7 +5,8 @@ import { authorize, getInbox, putInbox, readBody } from './_lib.js';
 //         items: (string | { text, category?, date? })[] }
 // Queues priorities that the app merges into the given day on its next sync.
 export default async function handler(req, res) {
-  if (!authorize(req)) {
+  const auth = authorize(req);
+  if (!auth) {
     res.status(401).json({ error: 'unauthorized' });
     return;
   }
@@ -39,9 +40,9 @@ export default async function handler(req, res) {
       return;
     }
 
-    const inbox = await getInbox();
+    const inbox = await getInbox(auth.userId);
     const next = (Array.isArray(inbox) ? inbox : []).concat(queued);
-    await putInbox(next);
+    await putInbox(auth.userId, next);
 
     res.status(200).json({ ok: true, queued: queued.length });
   } catch (e) {
