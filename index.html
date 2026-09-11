@@ -92,6 +92,10 @@
     transform: rotate(var(--rot, 0deg)) scale(1.12);
     filter: drop-shadow(0 12px 18px rgba(60, 85, 105, 0.28));
   }
+  /* Only seen while arranging on the stickers tab: this one belongs to another tab, so
+     it shows faintly rather than as part of what you are looking at. */
+  .sticker.elsewhere { opacity: 0.45; }
+  .sticker.elsewhere:hover { opacity: 1; }
   .sticker.dragging {
     cursor: grabbing;
     z-index: 60;
@@ -214,6 +218,7 @@
   .tray-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
   .tray-actions { display: flex; gap: 8px; flex: 0 0 auto; }
   .tray-hint { font-size: 11px; color: var(--muted); }
+  .tray-hint-block { margin: -4px 0 12px; line-height: 1.5; max-width: 62ch; }
   .tray-reset {
     flex: 0 0 auto;
     padding: 6px 12px; font-family: inherit; font-size: 11px;
@@ -696,6 +701,62 @@
   .metrics-detail .ln.is-done .mk { color: var(--done); }
   .metrics-detail .ln.not-done .mk { color: var(--border); }
   .metrics-detail .none { font-size: 11px; color: var(--muted); text-transform: none; letter-spacing: 0.04em; }
+  /* A quote isn't a task: no checkbox, nothing to complete, and the words are the
+     point — so they get room, a slant, and the mark hanging in the left margin. */
+  .quote-card {
+    position: relative;
+    background: var(--card);
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    padding: 16px 40px 14px 34px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: transform 0.18s cubic-bezier(.2,.8,.3,1.2), border-color 0.18s ease, box-shadow 0.18s ease;
+    animation: taskIn 0.28s cubic-bezier(.22,.9,.32,1);
+  }
+  .quote-card:hover {
+    transform: scale(1.012);
+    border-color: var(--border);
+    box-shadow: 0 6px 18px rgba(90,130,160,0.22);
+  }
+  .quote-card.leaving { opacity: 0; transform: translateX(24px); }
+  .quote-mark {
+    position: absolute;
+    left: 10px; top: 6px;
+    font-size: 32px; line-height: 1;
+    color: var(--btn-blue);
+    opacity: 0.5;
+    pointer-events: none;
+    user-select: none;
+  }
+  /* pre-wrap so a quote written across several lines keeps its breaks. */
+  .quote-text {
+    font-size: 14px;
+    line-height: 1.6;
+    font-style: italic;
+    white-space: pre-wrap;
+  }
+  .quote-who {
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+  }
+  .quote-noted { margin-left: 6px; color: var(--btn-blue-hover); font-style: normal; }
+  .quote-card .remove { position: absolute; right: 6px; top: 8px; }
+  .quote-who-input {
+    flex: 1 1 auto; min-width: 0;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    font-family: inherit; font-size: 11px;
+    letter-spacing: 0.05em;
+    color: var(--text);
+    border-radius: 8px;
+    outline: none;
+  }
+  .quote-who-input:focus { border-color: var(--btn-blue); }
+
   .summary-row { display: flex; gap: 8px; margin-bottom: 18px; }
   .summary-box { flex: 1; background: var(--card); border: 1px solid var(--border-light); padding: 12px; text-align: center; border-radius: 8px; }
   .summary-box .num { font-size: 18px; font-weight: 600; color: var(--text); }
@@ -813,6 +874,7 @@
 
     /* Under 16px, iOS zooms the page in when you focus a field and never zooms back. */
     .add-box textarea, .reflect-input, .sub-add, .auth-card input { font-size: 16px; }
+    .quote-who-input { font-size: 16px; }
     .api-token input { font-size: 16px; }
 
     /* Pop-outs sit high so the on-screen keyboard can't cover what you're typing into. */
@@ -997,6 +1059,27 @@
     </div>
   </div>
 </div>
+<div class="sub-pop" id="quotePop" hidden onclick="if (event.target === this) closeQuotePop()">
+  <div class="sub-pop-backdrop"></div>
+  <div class="sub-pop-card" id="quotePopCard">
+    <div class="lightbox-traffic">
+      <span class="dot red" onclick="event.stopPropagation(); closeQuotePop()" aria-label="Close" title="Close"></span>
+      <span class="dot yellow" onclick="event.stopPropagation(); closeQuotePop()" aria-label="Close" title="Close"></span>
+      <span class="dot green" onclick="event.stopPropagation(); toggleQuotePopZoom()" aria-label="Expand" title="Expand"></span>
+    </div>
+    <div class="sub-pop-title">the quote</div>
+    <div class="reflect">
+      <label class="reflect-label" for="quoteText">words</label>
+      <textarea class="reflect-input reflect-notes" id="quoteText" rows="4"></textarea>
+
+      <label class="reflect-label" for="quoteWho">who said it</label>
+      <input class="reflect-input" id="quoteWho" placeholder="leave it blank if it's yours">
+
+      <label class="reflect-label" for="quoteNote">where it's from, why it stuck</label>
+      <textarea class="reflect-input reflect-notes" id="quoteNote" rows="5" placeholder="a little note..."></textarea>
+    </div>
+  </div>
+</div>
 <div class="sub-pop" id="subPop" hidden onclick="if (event.target === this) closeSubPop()">
   <div class="sub-pop-backdrop"></div>
   <div class="sub-pop-card" id="subPopCard">
@@ -1066,6 +1149,7 @@
     <div class="tab active" data-tab="day" onclick="switchTab('day')">Day</div>
     <div class="tab" data-tab="backlog" onclick="switchTab('backlog')">Backlog</div>
     <div class="tab" data-tab="ideas" onclick="switchTab('ideas')">ideas</div>
+    <div class="tab" data-tab="quotes" onclick="switchTab('quotes')">quotes</div>
     <div class="tab" data-tab="stickers" onclick="switchTab('stickers')">stickers</div>
     <div class="tab" data-tab="metrics" onclick="switchTab('metrics')">Metrics</div>
   </div>
@@ -1143,6 +1227,21 @@
     <div class="empty" id="ideasEmpty" style="display:none;">no ideas yet</div>
   </div>
 
+  <!-- QUOTES VIEW -->
+  <div id="quotesView" class="tab-panel" style="display:none;">
+    <div class="add-box">
+      <textarea id="quoteInput" rows="2" placeholder="a quote you like, or one you made up..."></textarea>
+      <div class="hint">shift + enter for a line break &middot; tap a quote to edit it</div>
+    </div>
+    <div class="add-row-outside">
+      <input class="quote-who-input" id="quoteWhoInput" placeholder="who said it"
+             autocomplete="off" spellcheck="false">
+      <button onclick="submitQuoteInput()">add</button>
+    </div>
+    <div id="quotesList"></div>
+    <div class="empty" id="quotesEmpty" style="display:none;">nothing here yet</div>
+  </div>
+
   <!-- STICKERS VIEW -->
   <div id="stickersView" class="tab-panel" style="display:none;">
     <div class="tray-top">
@@ -1153,6 +1252,7 @@
         <button class="tray-reset" id="stickerReset" onclick="resetStickerBoard()">clear the board</button>
       </div>
     </div>
+    <div class="tray-hint tray-hint-block">a sticker shows on every tab until you move it while another tab is open &mdash; then it stays on that one. this tab shows all of them, the faint ones live elsewhere.</div>
     <div class="mobile-only">on a phone these sit behind the page as decoration &mdash; open it on a computer to arrange them</div>
     <div class="theme-bar" id="stickerThemes"></div>
     <div class="sticker-tray" id="stickerTray"></div>
@@ -1309,7 +1409,7 @@ function signInWith(data) {
   try { localStorage.removeItem(LEGACY_KEY); } catch (e) {}
   writeAccount(account);
   // Whatever the last account left in memory is not this one's.
-  daysMap = {}; backlog = []; ideas = [];
+  daysMap = {}; backlog = []; ideas = []; quotes = [];
   document.getElementById('authPassword').value = '';
   document.getElementById('authInvite').value = '';
   hideAuthGate();
@@ -1324,7 +1424,7 @@ function signOut() {
   clearToken();
   account = null;
   writeAccount(null);
-  daysMap = {}; backlog = []; ideas = [];
+  daysMap = {}; backlog = []; ideas = []; quotes = [];
   currentDate = todayStr();
   renderAll();
   renderAccountLine();
@@ -1409,11 +1509,12 @@ function readCache() {
   return null;
 }
 function writeCache() {
-  try { localStorage.setItem(cacheKey(), JSON.stringify({ days: daysMap, backlog, ideas })); } catch (e) {}
+  try { localStorage.setItem(cacheKey(), JSON.stringify({ days: daysMap, backlog, ideas, quotes })); } catch (e) {}
 }
 
 let daysMap = {};
 let ideas = [];
+let quotes = [];
 let backlog = [];
 let currentDate = todayStr();
 let stripStart = addDaysToStr(currentDate, -2);
@@ -1468,7 +1569,7 @@ async function pushState() {
     const res = await fetch('/api/sync', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-      body: JSON.stringify({ days: daysMap, backlog, ideas })
+      body: JSON.stringify({ days: daysMap, backlog, ideas, quotes })
     });
     if (res.status === 401) { clearToken(); pushFailed = true; setSaveStatus('error'); showAuthGate('that session has expired — sign in again.', true); return; }
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -1492,6 +1593,7 @@ function applyState(state) {
     backlog = Array.isArray(state.backlog) ? state.backlog : [];
     // `likes` was this list's original key; keep reading it so nothing saved under it is lost.
     ideas = Array.isArray(state.ideas) ? state.ideas : (Array.isArray(state.likes) ? state.likes : []);
+    quotes = Array.isArray(state.quotes) ? state.quotes : [];
     return true;
   }
   return false;
@@ -1503,6 +1605,7 @@ function renderAll() {
   renderDay();
   renderBacklog();
   renderIdeas();
+  renderQuotes();
   renderMetrics();
 }
 
@@ -1527,7 +1630,7 @@ async function loadAll() {
       clearToken();
       account = null;
       writeAccount(null);
-      daysMap = {}; backlog = []; ideas = [];
+      daysMap = {}; backlog = []; ideas = []; quotes = [];
       setSaveStatus('error');
       renderAll();
       renderAccountLine();
@@ -1591,17 +1694,24 @@ function seedBacklog() {
 }
 
 // ---------- TABS ----------
+// A sticker can belong to one tab, so the board needs to know which one is showing.
+let activeTab = 'day';
+
 function switchTab(tab) {
+  activeTab = tab;
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   document.getElementById('dayView').style.display = tab === 'day' ? 'block' : 'none';
   document.getElementById('backlogView').style.display = tab === 'backlog' ? 'block' : 'none';
   document.getElementById('metricsView').style.display = tab === 'metrics' ? 'block' : 'none';
   document.getElementById('ideasView').style.display = tab === 'ideas' ? 'block' : 'none';
+  document.getElementById('quotesView').style.display = tab === 'quotes' ? 'block' : 'none';
   document.getElementById('stickersView').style.display = tab === 'stickers' ? 'block' : 'none';
   if (tab === 'metrics') renderMetrics();
   if (tab === 'ideas') renderIdeas();
+  if (tab === 'quotes') renderQuotes();
   if (tab === 'stickers') renderStickerTray();
   if (tab === 'backlog') { renderDateStrip(); renderBacklog(); }
+  renderPlacedStickers();          // each tab keeps its own stickers
   // On a phone you're usually deep in a long list when you switch tabs; land at the
   // top of the new one rather than in the middle of it.
   bringDropTargetsIntoView();
@@ -1827,6 +1937,140 @@ function renderIdeas() {
     li.appendChild(topRow);
     listEl.appendChild(li);
   });
+}
+
+// ---------- QUOTES ----------
+// Not tasks: nothing to tick off, nothing to schedule. Stored in the same synced state
+// so they follow the account rather than the browser.
+function saveQuotes() { queuePush(); }
+
+function submitQuoteInput() {
+  const input = document.getElementById('quoteInput');
+  const who = document.getElementById('quoteWhoInput');
+  // Kept whole rather than split on newlines the way tasks are: a quote written across
+  // several lines is one quote.
+  const text = (input.value || '').trim();
+  if (!text) { input.focus(); return; }
+  quotes.unshift({
+    id: crypto.randomUUID(),
+    text,
+    who: (who.value || '').trim() || undefined,
+  });
+  input.value = '';
+  who.value = '';
+  saveQuotes();
+  renderQuotes();
+  input.focus();
+}
+
+function removeQuote(id) {
+  const card = document.querySelector(`.quote-card[data-id="${id}"]`);
+  quotes = quotes.filter(q => q.id !== id);
+  saveQuotes();
+  if (!card) { renderQuotes(); return; }
+  card.classList.add('leaving');
+  setTimeout(renderQuotes, 220);
+}
+
+function quoteHasNote(quote) {
+  return !!(quote.note && quote.note.trim());
+}
+
+function renderQuotes() {
+  const listEl = document.getElementById('quotesList');
+  const emptyEl = document.getElementById('quotesEmpty');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+  emptyEl.style.display = quotes.length ? 'none' : 'block';
+
+  quotes.forEach(quote => {
+    const card = document.createElement('div');
+    card.className = 'quote-card';
+    card.dataset.id = quote.id;
+    card.onclick = () => openQuotePop(quote.id);
+
+    const mark = document.createElement('div');
+    mark.className = 'quote-mark';
+    mark.textContent = '\u201c';
+
+    const text = document.createElement('div');
+    text.className = 'quote-text';
+    text.textContent = quote.text;
+
+    const remove = document.createElement('button');
+    remove.className = 'remove';
+    remove.textContent = '\u00d7';
+    remove.title = 'remove this quote';
+    remove.onclick = (e) => { e.stopPropagation(); removeQuote(quote.id); };
+
+    card.appendChild(mark);
+    card.appendChild(text);
+    // An unattributed quote gets no dash: a blank line under it reads like a mistake.
+    if ((quote.who || '').trim() || quoteHasNote(quote)) {
+      const who = document.createElement('div');
+      who.className = 'quote-who';
+      who.textContent = (quote.who || '').trim() ? '\u2014 ' + quote.who.trim() : '';
+      if (quoteHasNote(quote)) {
+        const noted = document.createElement('span');
+        noted.className = 'quote-noted';
+        noted.textContent = '\u270e';
+        noted.title = 'has a note';
+        who.appendChild(noted);
+      }
+      card.appendChild(who);
+    }
+    card.appendChild(remove);
+    listEl.appendChild(card);
+  });
+}
+
+const QUOTE_FIELDS = [['text', 'quoteText'], ['who', 'quoteWho'], ['note', 'quoteNote']];
+let openQuoteId = null;
+let quotePopZoom = 0;
+
+function toggleQuotePopZoom() {
+  const card = document.getElementById('quotePopCard');
+  quotePopZoom = (quotePopZoom + 1) % SUB_POP_ZOOMS.length;
+  card.classList.remove('zoomed', 'zoomed2');
+  if (SUB_POP_ZOOMS[quotePopZoom]) card.classList.add(SUB_POP_ZOOMS[quotePopZoom]);
+}
+
+function openQuotePop(id) {
+  const quote = quotes.find(q => q.id === id);
+  if (!quote) return;
+  openQuoteId = id;
+
+  const pop = document.getElementById('quotePop');
+  const card = document.getElementById('quotePopCard');
+  quotePopZoom = 0;
+  card.classList.remove('zoomed', 'zoomed2');
+  QUOTE_FIELDS.forEach(([key, elId]) => { document.getElementById(elId).value = quote[key] || ''; });
+
+  flipOpen(pop, card, document.querySelector(`.quote-card[data-id="${id}"]`), '#quoteText');
+}
+
+function saveQuoteEdits() {
+  const quote = quotes.find(q => q.id === openQuoteId);
+  if (!quote) return;
+  QUOTE_FIELDS.forEach(([key, elId]) => {
+    const val = document.getElementById(elId).value;
+    // The words themselves can't be emptied away — deleting a quote is the × on the card.
+    if (key === 'text') { if (val.trim()) quote.text = val.trim(); return; }
+    if (val.trim()) quote[key] = val.trim();
+    else delete quote[key];
+  });
+  saveQuotes();
+}
+
+function closeQuotePop() {
+  const pop = document.getElementById('quotePop');
+  const card = document.getElementById('quotePopCard');
+  if (pop.hidden) return;
+  saveQuoteEdits();
+  const target = openQuoteId ? document.querySelector(`.quote-card[data-id="${openQuoteId}"]`) : null;
+  openQuoteId = null;
+  flipClose(pop, card, target);
+  renderQuotes();
 }
 
 // ---------- IDEA REFLECTION ----------
@@ -2402,6 +2646,16 @@ document.getElementById('dayInput').addEventListener('keydown', (e) => {
 document.getElementById('ideasInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitIdeasInput(); }
 });
+// Shift+enter is a line break here, which verse and couplets actually need.
+document.getElementById('quoteInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitQuoteInput(); }
+});
+document.getElementById('quoteWhoInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); submitQuoteInput(); }
+});
+QUOTE_FIELDS.forEach(([, elId]) => {
+  document.getElementById(elId).addEventListener('input', saveQuoteEdits);
+});
 REFLECT_FIELDS.forEach(([, elId]) => {
   document.getElementById(elId).addEventListener('input', saveIdeaReflection);
 });
@@ -2875,15 +3129,29 @@ function attachStickerRotate(el, spin, badge, p) {
   spin.addEventListener('dblclick', (e) => e.stopPropagation());
 }
 
+// A sticker with no tab of its own shows on all of them — which is every sticker placed
+// before this existed, and every one freshly dragged out of the tray. Moving one while a
+// particular tab is open is what pins it there. The stickers tab shows the lot, so
+// anything pinned elsewhere can still be found and rearranged.
+function stickerBelongsHere(p) {
+  return !p.tab || p.tab === activeTab || activeTab === 'stickers';
+}
+
+function stickerTabNote(p) {
+  if (!p.tab) return ' · on every tab';
+  if (p.tab === activeTab) return '';
+  return ' · lives on the ' + p.tab + ' tab';
+}
+
 function renderPlacedStickers() {
   const board = document.querySelector('.moodboard');
   if (!board) return;
   board.querySelectorAll('.sticker').forEach(el => el.remove());
 
-  stickerPlacements.forEach(p => {
+  stickerPlacements.filter(stickerBelongsHere).forEach(p => {
     const el = document.createElement('div');
     el.className = 'sticker';
-    el.title = p.name.replace(/-/g, ' ') + ' — corner arrows resize and rotate · scroll to resize · double-click to remove';
+    el.title = p.name.replace(/-/g, ' ') + ' — corner arrows resize and rotate · scroll to resize · double-click to remove' + stickerTabNote(p);
     el.style.setProperty('--rot', p.rot);
     el.style.setProperty('--size', p.size + 'px');
     el.style.left = Math.round(window.innerWidth / 2 + p.dx) + 'px';
@@ -2894,6 +3162,8 @@ function renderPlacedStickers() {
     img.alt = '';
     img.draggable = false;
     el.appendChild(img);
+
+    if (p.tab && p.tab !== activeTab) el.classList.add('elsewhere');
 
     const badge = document.createElement('div');
     badge.className = 'sticker-size';
@@ -2940,6 +3210,9 @@ function renderPlacedStickers() {
         }
         p.dx = Math.round(left - window.innerWidth / 2);
         p.top = top;
+        // Arranging on the stickers tab is working on the whole board rather than
+        // deciding where something lives, so that one leaves the assignment alone.
+        if (activeTab !== 'stickers') p.tab = activeTab;
         saveStickerPlacements();
       },
     });
@@ -3430,6 +3703,7 @@ document.addEventListener('keydown', (e) => {
   if (!document.getElementById('photoLightbox').hidden) closePhotoLightbox();
   else if (!document.getElementById('subPop').hidden) closeSubPop();
   else if (!document.getElementById('ideaPop').hidden) closeIdeaPop();
+  else if (!document.getElementById('quotePop').hidden) closeQuotePop();
 });
 
 // Photos are kept as data URLs in localStorage, so a full-size camera image would
