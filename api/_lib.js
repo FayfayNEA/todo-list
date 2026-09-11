@@ -84,6 +84,42 @@ export function checkInvite(given) {
   return invitesOpen() && constantEq(given || '', INVITE_CODE);
 }
 
+// ---------- invitations ----------
+// A code of someone's own, good once. The shared INVITE_CODE still works alongside these,
+// so nothing handed out before this existed stops working.
+const INVITE_INDEX = 'invites/index.json';
+// No I, L, O, 0 or 1: this gets read off a screen and typed on a phone.
+const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+
+export function newInviteCode() {
+  const block = () => Array.from({ length: 4 }, () => CODE_ALPHABET[crypto.randomInt(CODE_ALPHABET.length)]).join('');
+  return block() + '-' + block();
+}
+
+export const getInvites = () => readJson(INVITE_INDEX, []);
+export const putInvites = (v) => writeJson(INVITE_INDEX, v);
+
+// Either the shared code or an unused personal one. Returns what was matched, so signup
+// knows whether there's an invitation to spend.
+export async function resolveInvite(given) {
+  const raw = String(given || '').trim();
+  if (!raw) return null;
+  if (checkInvite(raw)) return { kind: 'shared' };
+  const code = raw.toUpperCase();
+  const hit = (await getInvites()).find((i) => i.code === code);
+  if (!hit || hit.usedAt || hit.revokedAt) return null;
+  return { kind: 'personal', code };
+}
+
+export async function markInviteUsed(code, email) {
+  const invites = await getInvites();
+  const hit = invites.find((i) => i.code === code);
+  if (!hit) return;
+  hit.usedAt = new Date().toISOString();
+  hit.usedBy = email;
+  await putInvites(invites);
+}
+
 // ---------- tokens ----------
 // Signed rather than stored: there's no session table to keep, and a token can't be
 // edited into someone else's account without the secret.
