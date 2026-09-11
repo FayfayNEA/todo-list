@@ -1162,8 +1162,7 @@
   <div class="tabs">
     <div class="tab active" data-tab="day" onclick="switchTab('day')">Day</div>
     <div class="tab" data-tab="backlog" onclick="switchTab('backlog')">Backlog</div>
-    <div class="tab" data-tab="ideas" onclick="switchTab('ideas')">ideas</div>
-    <div class="tab" data-tab="quotes" onclick="switchTab('quotes')">quotes</div>
+    <div class="tab" data-tab="keep" onclick="switchTab('keep')">keep</div>
     <div class="tab" data-tab="stickers" onclick="switchTab('stickers')">stickers</div>
     <div class="tab" data-tab="metrics" onclick="switchTab('metrics')">Metrics</div>
     <div class="tab tab-settings" data-tab="settings" onclick="switchTab('settings')"
@@ -1245,29 +1244,27 @@
     <div class="empty" id="backlogEmptyPersonal" data-reorder="personal" style="display:none;">backlog is empty</div>
   </div>
 
-  <!-- IDEAS VIEW -->
-  <div id="ideasView" class="tab-panel" style="display:none;">
+  <!-- KEEP VIEW — ideas and quotes, one tab, a section each -->
+  <div id="keepView" class="tab-panel" style="display:none;">
     <div class="add-box">
-      <textarea id="ideasInput" rows="1" placeholder="add an idea — a hobby, a splurge, something to try..."></textarea>
-    </div>
-    <div class="add-row-outside">
-      <button onclick="submitIdeasInput()">add</button>
-    </div>
-    <ul id="ideasList"></ul>
-    <div class="empty" id="ideasEmpty" style="display:none;">no ideas yet</div>
-  </div>
-
-  <!-- QUOTES VIEW -->
-  <div id="quotesView" class="tab-panel" style="display:none;">
-    <div class="add-box">
-      <textarea id="quoteInput" rows="2" placeholder="a quote you like, or one you made up..."></textarea>
-      <div class="hint">shift + enter for a line break &middot; tap a quote to edit it</div>
+      <textarea id="keepInput" rows="2" placeholder="an idea — a hobby, a splurge, something to try..."></textarea>
+      <div class="hint" id="keepHint">enter to add &middot; shift + enter for a line break &middot; tap one to open it</div>
     </div>
     <div class="add-row-outside">
       <input class="quote-who-input" id="quoteWhoInput" placeholder="who said it"
-             autocomplete="off" spellcheck="false">
-      <button onclick="submitQuoteInput()">add</button>
+             autocomplete="off" spellcheck="false" hidden>
+      <select id="newKeepKind" onchange="renderKeepKind()">
+        <option value="idea">idea</option>
+        <option value="quote">quote</option>
+      </select>
+      <button onclick="submitKeepInput()">add</button>
     </div>
+
+    <div class="section-heading">ideas</div>
+    <ul id="ideasList"></ul>
+    <div class="empty" id="ideasEmpty" style="display:none;">no ideas yet</div>
+
+    <div class="section-heading">quotes</div>
     <div id="quotesList"></div>
     <div class="empty" id="quotesEmpty" style="display:none;">nothing here yet</div>
   </div>
@@ -1761,13 +1758,11 @@ function switchTab(tab) {
   document.getElementById('dayView').style.display = tab === 'day' ? 'block' : 'none';
   document.getElementById('backlogView').style.display = tab === 'backlog' ? 'block' : 'none';
   document.getElementById('metricsView').style.display = tab === 'metrics' ? 'block' : 'none';
-  document.getElementById('ideasView').style.display = tab === 'ideas' ? 'block' : 'none';
-  document.getElementById('quotesView').style.display = tab === 'quotes' ? 'block' : 'none';
+  document.getElementById('keepView').style.display = tab === 'keep' ? 'block' : 'none';
   document.getElementById('stickersView').style.display = tab === 'stickers' ? 'block' : 'none';
   document.getElementById('settingsView').style.display = tab === 'settings' ? 'block' : 'none';
   if (tab === 'metrics') renderMetrics();
-  if (tab === 'ideas') renderIdeas();
-  if (tab === 'quotes') renderQuotes();
+  if (tab === 'keep') { renderIdeas(); renderQuotes(); }
   if (tab === 'stickers') renderStickerTray();
   if (tab === 'backlog') { renderDateStrip(); renderBacklog(); }
   if (tab === 'settings') renderAccount();
@@ -1925,14 +1920,41 @@ function refreshSubPop() {
 // ---------- IDEAS ----------
 function saveIdeas() { queuePush(); }
 
+// Ideas and quotes share a tab and an add box; the picker says which list a new one
+// joins, and a quote is the only one of the two that wants an attribution.
+function keepKind() {
+  const sel = document.getElementById('newKeepKind');
+  return sel && sel.value === 'quote' ? 'quote' : 'idea';
+}
+
+function renderKeepKind() {
+  const quote = keepKind() === 'quote';
+  const input = document.getElementById('keepInput');
+  const who = document.getElementById('quoteWhoInput');
+  if (who) who.hidden = !quote;
+  if (input) {
+    input.placeholder = quote
+      ? 'a quote you like, or one you made up...'
+      : 'an idea — a hobby, a splurge, something to try...';
+    input.focus();
+  }
+}
+
+function submitKeepInput() {
+  if (keepKind() === 'quote') { submitQuoteInput(); return; }
+  submitIdeasInput();
+}
+
 function submitIdeasInput() {
-  const input = document.getElementById('ideasInput');
+  const input = document.getElementById('keepInput');
+  // Several ideas at once still split on newlines — a quote never does.
   const lines = (input.value || '').split('\n').map(s => s.trim()).filter(Boolean);
   if (!lines.length) return;
-  lines.forEach(text => ideas.push({ id: crypto.randomUUID(), text, done: false }));
+  lines.forEach(text => ideas.unshift({ id: crypto.randomUUID(), text, done: false }));
   input.value = '';
   saveIdeas();
   renderIdeas();
+  input.focus();
 }
 
 function toggleIdea(id) {
@@ -2005,7 +2027,7 @@ function renderIdeas() {
 function saveQuotes() { queuePush(); }
 
 function submitQuoteInput() {
-  const input = document.getElementById('quoteInput');
+  const input = document.getElementById('keepInput');
   const who = document.getElementById('quoteWhoInput');
   // Kept whole rather than split on newlines the way tasks are: a quote written across
   // several lines is one quote.
@@ -2703,12 +2725,9 @@ function submitDayInput() {
 document.getElementById('dayInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitDayInput(); }
 });
-document.getElementById('ideasInput').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitIdeasInput(); }
-});
-// Shift+enter is a line break here, which verse and couplets actually need.
-document.getElementById('quoteInput').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitQuoteInput(); }
+// Shift+enter is a line break, which verse and couplets actually need.
+document.getElementById('keepInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitKeepInput(); }
 });
 document.getElementById('quoteWhoInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); submitQuoteInput(); }
@@ -3068,6 +3087,9 @@ function initStickers() {
   stickerPlacements.forEach(p => {
     if (typeof p.dx !== 'number') { p.dx = Math.round((p.left || 0) - halfW); delete p.left; }
     if (typeof p.top !== 'number') { p.top = Math.round((p.ty || 0) * window.innerHeight); delete p.ty; }
+    // Ideas and quotes became one tab; a sticker still pointing at either would belong
+    // to a tab that no longer exists, and so would never show up anywhere again.
+    if (p.tab === 'ideas' || p.tab === 'quotes') p.tab = 'keep';
   });
   saveStickerPlacements();
   renderPlacedStickers();
