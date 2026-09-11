@@ -365,10 +365,30 @@
     padding: 7px 14px 6px;
     display: flex; align-items: center;
   }
-  .tab-icon { display: block; transition: transform 0.3s cubic-bezier(.2,.8,.3,1.2); }
+  .tab-icon { display: block; transition: transform 0.35s cubic-bezier(.22,.9,.32,1.3); }
   .tab-settings:hover .tab-icon { transform: rotate(40deg); }
+  /* It turns as it opens, and a little further if you're still on it. */
+  .tab-settings.active .tab-icon { transform: rotate(90deg); }
+  .tab-settings.active:hover .tab-icon { transform: rotate(130deg); }
   .tab:not(.active):hover { background: #dde5e9; color: var(--text); transform: scale(1.06); }
-  .tab.active { background: var(--card); color: var(--text); border-bottom-color: var(--card); z-index: 2; position: relative; }
+  /* Pressing a tab gives under the finger before the panel changes. */
+  .tab:active { transform: scale(0.96); }
+  .tab.active {
+    background: var(--card); color: var(--text); border-bottom-color: var(--card);
+    z-index: 2; position: relative;
+    animation: tabRise 0.26s cubic-bezier(.22,.9,.32,1);
+  }
+  /* Runs only when the class is added, so it marks the moment a tab takes over. */
+  @keyframes tabRise {
+    from { transform: translateY(2px) scale(0.97); }
+    to { transform: translateY(0) scale(1); }
+  }
+  /* Switching to a panel you've seen before should still arrive, not just appear. */
+  .tab-panel.entering { animation: panelIn 0.26s cubic-bezier(.22,.9,.32,1); }
+  @keyframes panelIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
   /* While dragging a task, the backlog tab becomes a drop target. */
   body.dragging-item .tab[data-tab="backlog"] { border-color: var(--accent); border-style: dashed; color: var(--accent); }
   .tab.drop-target { background: var(--highlight); border-color: var(--accent); border-style: solid; color: var(--text); z-index: 3; position: relative; }
@@ -801,16 +821,58 @@
   }
   .auth-card h2 { font-size: 12px; text-transform: none; letter-spacing: 0.08em; margin: 0 0 6px; }
   .auth-card p { font-size: 11px; color: var(--muted); margin: 0 0 14px; line-height: 1.5; }
+  /* The card arrives rather than appearing. */
+  .auth-card { animation: authIn 0.34s cubic-bezier(.22,.9,.32,1); }
+  @keyframes authIn {
+    from { opacity: 0; transform: translateY(10px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  /* A rejected password should be felt, not just read. */
+  .auth-card.wrong { animation: authShake 0.4s cubic-bezier(.36,.07,.19,.97); }
+  @keyframes authShake {
+    10%, 90% { transform: translateX(-2px); }
+    20%, 80% { transform: translateX(4px); }
+    30%, 50%, 70% { transform: translateX(-6px); }
+    40%, 60% { transform: translateX(6px); }
+  }
   .auth-card input {
     width: 100%; padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px;
     font-family: inherit; font-size: 13px; background: var(--bg); color: var(--text); margin-bottom: 10px;
+    outline: none;
+    transition: border-color 0.16s ease, box-shadow 0.18s ease, background 0.16s ease;
+  }
+  .auth-card input:focus {
+    border-color: var(--btn-blue);
+    box-shadow: 0 0 0 3px rgba(142, 194, 230, 0.3);
+    background: var(--card);
+  }
+  /* A field that has something in it settles into a darker edge — the typing shows. */
+  .auth-card input:not(:placeholder-shown) { border-color: var(--btn-blue-hover); }
+  /* Appears on the way into sign-up, so it should slide in rather than snap. */
+  #authInvite:not([hidden]) { animation: fieldIn 0.28s cubic-bezier(.22,.9,.32,1); }
+  @keyframes fieldIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
   }
   .auth-card button {
     width: 100%; padding: 9px 12px; border: 1px solid var(--btn-blue); background: var(--btn-blue);
     color: #fff; font-family: inherit; font-size: 11px; font-weight: 600;
     text-transform: none; letter-spacing: 0.08em; cursor: pointer; border-radius: 8px;
+    transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease,
+                transform 0.15s cubic-bezier(.2,.8,.3,1.4);
   }
-  .auth-card button:hover { background: var(--btn-blue-hover); border-color: var(--btn-blue-hover); }
+  .auth-card button:hover:not(:disabled) {
+    background: var(--btn-blue-hover); border-color: var(--btn-blue-hover);
+    transform: scale(1.03); box-shadow: 0 6px 18px rgba(90, 130, 160, 0.34);
+  }
+  .auth-card button:active:not(:disabled) { transform: scale(0.97); box-shadow: none; }
+  /* While it's talking to the server: alive, but plainly not ready for another press. */
+  .auth-card button:disabled { cursor: default; animation: authWorking 1.1s ease-in-out infinite; }
+  @keyframes authWorking {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 0.95; }
+  }
+  .auth-card .err { transition: color 0.16s ease; }
   .auth-card .err { color: var(--muted); min-height: 14px; font-size: 11px; }
   .auth-card .err.bad { color: var(--danger); }
   .auth-card input[hidden] { display: none; }
@@ -819,7 +881,11 @@
     font-size: 11px; color: var(--muted); cursor: pointer;
     letter-spacing: 0.03em;
   }
-  .auth-switch:hover { color: var(--text); text-decoration: underline; }
+  .auth-switch {
+    transition: color 0.16s ease, transform 0.16s cubic-bezier(.2,.8,.3,1.3);
+  }
+  .auth-switch:hover { color: var(--text); text-decoration: underline; transform: scale(1.04); }
+  .auth-switch:active { transform: scale(0.97); }
 
   .api-token { display: flex; gap: 6px; align-items: center; margin: 10px 0 4px; }
   .api-token[hidden] { display: none; }
@@ -939,6 +1005,16 @@
 
   @media (max-width: 929px) and (display-mode: browser) {
     .sub-pop-card, .photo-lightbox-card { max-width: 94vw; }
+  }
+
+  /* Everything above is decoration on top of something that already worked. */
+  @media (prefers-reduced-motion: reduce) {
+    .tab.active, .tab-panel.entering, .auth-card, .auth-card.wrong,
+    #authInvite:not([hidden]), .auth-card button:disabled { animation: none; }
+    .tab:active, .auth-card button:hover:not(:disabled),
+    .auth-card button:active:not(:disabled), .auth-switch:hover, .auth-switch:active,
+    .tab-settings:hover .tab-icon, .tab-settings.active .tab-icon,
+    .tab-settings.active:hover .tab-icon { transform: none; }
   }
 
   .photo-lightbox {
@@ -1408,6 +1484,13 @@ function setAuthMsg(msg, bad) {
   if (!err) return;
   err.textContent = msg || '';
   err.className = 'err' + (bad ? ' bad' : '');
+  if (!bad) return;
+  // Same re-arming as the panels: without it only the first wrong password shakes.
+  const card = document.querySelector('.auth-card');
+  if (!card) return;
+  card.classList.remove('wrong');
+  void card.offsetWidth;
+  card.classList.add('wrong');
 }
 function toggleAuthMode() {
   authMode = authMode === 'signup' ? 'login' : 'signup';
@@ -1752,15 +1835,30 @@ function seedBacklog() {
 // A sticker can belong to one tab, so the board needs to know which one is showing.
 let activeTab = 'day';
 
+const TAB_PANELS = {
+  day: 'dayView',
+  backlog: 'backlogView',
+  growth: 'growthView',
+  stickers: 'stickersView',
+  metrics: 'metricsView',
+  settings: 'settingsView',
+};
+
 function switchTab(tab) {
   activeTab = tab;
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
-  document.getElementById('dayView').style.display = tab === 'day' ? 'block' : 'none';
-  document.getElementById('backlogView').style.display = tab === 'backlog' ? 'block' : 'none';
-  document.getElementById('metricsView').style.display = tab === 'metrics' ? 'block' : 'none';
-  document.getElementById('growthView').style.display = tab === 'growth' ? 'block' : 'none';
-  document.getElementById('stickersView').style.display = tab === 'stickers' ? 'block' : 'none';
-  document.getElementById('settingsView').style.display = tab === 'settings' ? 'block' : 'none';
+  Object.entries(TAB_PANELS).forEach(([name, id]) => {
+    const panel = document.getElementById(id);
+    if (!panel) return;
+    const show = name === tab;
+    panel.style.display = show ? 'block' : 'none';
+    if (!show) return;
+    // Re-armed every time: a CSS animation won't replay while the class is still on,
+    // so going back to a tab you've already opened would arrive with no movement.
+    panel.classList.remove('entering');
+    void panel.offsetWidth;
+    panel.classList.add('entering');
+  });
   if (tab === 'metrics') renderMetrics();
   if (tab === 'growth') { renderIdeas(); renderQuotes(); }
   if (tab === 'stickers') renderStickerTray();
@@ -3061,19 +3159,26 @@ function saveStickerPlacements() {
   try { localStorage.setItem(STICKER_PLACE_KEY, JSON.stringify(stickerPlacements)); } catch (e) {}
 }
 
+// A fresh board starts bare. Opening this for the first time and finding thirty-one
+// stickers you didn't put there is somebody else's room, not an empty page — and the
+// tray is right there on the stickers tab when you want them.
 function seedStickerPlacements() {
   let legacy = {};
   try { legacy = JSON.parse(localStorage.getItem(STICKER_POS_KEY) || '{}'); } catch (e) {}
+  if (!Object.keys(legacy).length) return [];
+
+  // Anything arranged before the tray existed is carried over rather than dropped.
   const halfW = window.innerWidth / 2;
   return STICKER_CATALOG.map(([name, size], i) => {
-    const [side, frac, pct, rot] = STICKER_DEFAULT_SPOTS[i] || [1, 0.5, 50, '0deg'];
-    const moved = legacy['st' + (i + 1)];     // carry over anything dragged before the tray existed
+    const moved = legacy['st' + (i + 1)];
+    if (!moved) return null;
+    const rot = (STICKER_DEFAULT_SPOTS[i] || [1, 0.5, 50, '0deg'])[3];
     return {
       uid: newPlacementId(), name, size, rot,
-      dx: moved ? Math.round(moved.left - halfW) : marginSpot(side, frac, size),
-      top: moved ? moved.top : Math.round(window.innerHeight * pct / 100),
+      dx: Math.round(moved.left - halfW),
+      top: moved.top,
     };
-  });
+  }).filter(Boolean);
 }
 
 function initStickers() {
