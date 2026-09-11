@@ -1,5 +1,5 @@
 import {
-  accountsReady, invitesOpen, checkInvite, normalizeEmail,
+  accountsReady, invitesOpen, resolveInvite, markInviteUsed, normalizeEmail,
   findUser, createUser, samePassword, sessionToken, apiToken, isOwner, readBody,
 } from './_lib.js';
 
@@ -39,12 +39,15 @@ export default async function handler(req, res) {
     }
 
     if (action === 'signup') {
-      if (!invitesOpen()) {
+      // Either the shared code or a personal invitation. If neither is set up, there is
+      // no way in at all, which is worth saying differently from a wrong code.
+      const invite = await resolveInvite(body.invite);
+      if (!invite && !invitesOpen()) {
         res.status(503).json({ error: 'new accounts are closed right now' });
         return;
       }
-      if (!checkInvite(body.invite)) {
-        res.status(403).json({ error: "that invite code isn't right" });
+      if (!invite) {
+        res.status(403).json({ error: "that invite code isn't right, or it's already been used" });
         return;
       }
       if (password.length < MIN_PASSWORD) {
@@ -55,7 +58,9 @@ export default async function handler(req, res) {
         res.status(409).json({ error: 'there is already an account with that email — sign in instead' });
         return;
       }
-      res.status(200).json(signedIn(await createUser(email, password)));
+      const user = await createUser(email, password);
+      if (invite.kind === 'personal') await markInviteUsed(invite.code, email);
+      res.status(200).json(signedIn(user));
       return;
     }
 

@@ -799,6 +799,27 @@
     font-size: 10px; background: var(--bg);
     border: 1px solid var(--border-light); border-radius: 4px; padding: 1px 4px;
   }
+  .setting-note.bad { color: var(--danger); }
+  .setting-note.good { color: var(--btn-blue-hover); }
+  .invite-row {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 9px 0; border-top: 1px solid var(--border-light);
+    font-size: 11px; color: var(--muted);
+    animation: taskIn 0.28s cubic-bezier(.22,.9,.32,1);
+  }
+  .invite-code {
+    font-size: 12px; font-weight: 600; letter-spacing: 0.1em; color: var(--text);
+  }
+  .invite-for { flex: 1 1 auto; min-width: 0; word-break: break-word; }
+  .invite-state { flex: 0 0 auto; }
+  .invite-state.used { color: var(--done); }
+  .invite-state.revoked { text-decoration: line-through; opacity: 0.7; }
+  .invite-act {
+    flex: 0 0 auto; cursor: pointer; text-decoration: underline;
+    transition: color 0.15s ease, transform 0.15s cubic-bezier(.2,.8,.3,1.3);
+  }
+  .invite-act:hover { color: var(--text); transform: scale(1.05); }
+  .invite-act:active { transform: scale(0.96); }
 
   .summary-row { display: flex; gap: 8px; margin-bottom: 18px; }
   .summary-box { flex: 1; background: var(--card); border: 1px solid var(--border-light); padding: 12px; text-align: center; border-radius: 8px; }
@@ -1371,6 +1392,21 @@
       </div>
     </div>
 
+    <div class="setting-group" id="inviteGroup" hidden>
+      <div class="setting-title">invite someone</div>
+      <div class="setting-note">
+        they get a code of their own that works once, and a checklist of their own that
+        starts empty. nothing of yours is shared with them.
+      </div>
+      <div class="setting-row">
+        <input class="quote-who-input" id="inviteEmail" type="email" placeholder="their email"
+               autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
+        <button class="tray-reset" id="inviteSend" onclick="createInvite()">send invite</button>
+      </div>
+      <div class="setting-note" id="inviteMsg" hidden></div>
+      <div id="inviteList"></div>
+    </div>
+
     <div class="setting-group">
       <div class="setting-title">agent token</div>
       <div class="setting-note">
@@ -1436,6 +1472,16 @@ function ownersView() { return !account || account.isOwner; }
 function nsKey(base) { return ownersView() ? base : base + '::' + account.email; }
 function cacheKey() { return nsKey(CACHE_BASE); }
 
+// Someone arriving from an invitation shouldn't have to copy a code out of an email.
+let pendingInvite = null;
+try {
+  const inv = new URLSearchParams(location.search).get('invite');
+  if (inv) {
+    pendingInvite = inv.trim();
+    history.replaceState(null, '', location.pathname);
+  }
+} catch (e) {}
+
 function getToken() {
   if (token) return token;
   try {
@@ -1469,6 +1515,8 @@ function legacySession() {
 function showAuthGate(msg, bad) {
   const gate = document.getElementById('authGate');
   if (!gate) return;
+  // Arriving on an invitation means signing up, not signing in.
+  if (pendingInvite && authMode !== 'signup') authMode = 'signup';
   gate.hidden = false;
   renderAuthMode();
   setAuthMsg(msg, bad);
@@ -1501,6 +1549,10 @@ function toggleAuthMode() {
 }
 function renderAuthMode() {
   const signup = authMode === 'signup';
+  if (pendingInvite) {
+    const field = document.getElementById('authInvite');
+    if (field && !field.value) field.value = pendingInvite;
+  }
   const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
   set('authTitle', signup ? 'make an account' : 'welcome back');
   set('authBlurb', signup
@@ -1602,6 +1654,140 @@ function renderAccount() {
   if (none) none.hidden = has;
   if (row && !has) row.hidden = true;
   if (row && !row.hidden) document.getElementById('apiTokenInput').value = account.apiToken;
+}
+
+// ---------- inviting people ----------
+// Only the owner can hand out invitations, so the whole section stays hidden otherwise.
+let invites = [];
+let mailWorks = false;
+
+function setInviteMsg(msg, tone) {
+  const el = document.getElementById('inviteMsg');
+  if (!el) return;
+  el.hidden = !msg;
+  el.textContent = msg || '';
+  el.className = 'setting-note' + (tone ? ' ' + tone : '');
+}
+
+async function inviteFetch(method, body) {
+  const key = getToken();
+  if (!key) return null;
+  const res = await fetch('/api/invite', {
+    method,
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  return { ok: res.ok, data };
+}
+
+async function loadInvites() {
+  const group = document.getElementById('inviteGroup');
+  if (!group) return;
+  group.hidden = !(account && account.isOwner);
+  if (group.hidden) return;
+  try {
+    const out = await inviteFetch('GET');
+    if (!out || !out.ok) return;
+    invites = out.data.invites || [];
+    mailWorks = !!out.data.mailReady;
+    renderInvites();
+  } catch (e) {}
+}
+
+async function createInvite() {
+  const field = document.getElementById('inviteEmail');
+  const btn = document.getElementById('inviteSend');
+  const email = (field.value || '').trim();
+  if (!email) { field.focus(); return; }
+  btn.disabled = true;
+  btn.textContent = 'sending...';
+  setInviteMsg('');
+  try {
+    const out = await inviteFetch('POST', { email });
+    if (!out || !out.ok) { setInviteMsg((out && out.data.error) || "that didn't work", 'bad'); return; }
+    field.value = '';
+    invites.unshift(out.data.invite);
+    renderInvites();
+    // The invitation exists either way; only the delivery is in question, so say which.
+    if (out.data.sent) setInviteMsg('sent to ' + email, 'good');
+    else setInviteMsg((out.data.reason || "couldn't email it") + ' — copy the link and send it yourself', 'bad');
+  } catch (e) {
+    setInviteMsg("couldn't reach the server", 'bad');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'send invite';
+  }
+}
+
+async function revokeInvite(code) {
+  const out = await inviteFetch('DELETE', { code });
+  if (!out || !out.ok) { setInviteMsg((out && out.data.error) || "couldn't revoke that", 'bad'); return; }
+  const hit = invites.find(i => i.code === code);
+  if (hit) hit.revokedAt = new Date().toISOString();
+  renderInvites();
+  setInviteMsg('');
+}
+
+function inviteLink(code) {
+  return location.origin + '/?invite=' + encodeURIComponent(code);
+}
+
+function copyInvite(code) {
+  const link = inviteLink(code);
+  const done = () => setInviteMsg('link copied — send it however you like', 'good');
+  if (navigator.clipboard) navigator.clipboard.writeText(link).then(done, () => setInviteMsg(link));
+  else setInviteMsg(link);
+}
+
+function renderInvites() {
+  const list = document.getElementById('inviteList');
+  if (!list) return;
+  list.innerHTML = '';
+  if (!mailWorks) {
+    const note = document.createElement('div');
+    note.className = 'setting-note';
+    note.textContent = 'email sending isn\u2019t set up, so invitations are made but not delivered — copy the link and send it yourself.';
+    list.appendChild(note);
+  }
+  invites.forEach(inv => {
+    const row = document.createElement('div');
+    row.className = 'invite-row';
+
+    const code = document.createElement('span');
+    code.className = 'invite-code';
+    code.textContent = inv.code;
+
+    const who = document.createElement('span');
+    who.className = 'invite-for';
+    who.textContent = inv.email;
+
+    row.appendChild(code);
+    row.appendChild(who);
+
+    const state = document.createElement('span');
+    state.className = 'invite-state';
+    if (inv.usedAt) { state.classList.add('used'); state.textContent = 'joined'; }
+    else if (inv.revokedAt) { state.classList.add('revoked'); state.textContent = 'revoked'; }
+    else state.textContent = inv.emailedAt ? 'sent' : 'not sent';
+    row.appendChild(state);
+
+    if (!inv.usedAt && !inv.revokedAt) {
+      const copy = document.createElement('span');
+      copy.className = 'invite-act';
+      copy.textContent = 'copy link';
+      copy.onclick = () => copyInvite(inv.code);
+      row.appendChild(copy);
+
+      const drop = document.createElement('span');
+      drop.className = 'invite-act';
+      drop.textContent = 'revoke';
+      drop.onclick = () => revokeInvite(inv.code);
+      row.appendChild(drop);
+    }
+
+    list.appendChild(row);
+  });
 }
 
 // Kept behind a click rather than sitting on screen: anyone who reads it can write to
@@ -1863,7 +2049,7 @@ function switchTab(tab) {
   if (tab === 'growth') { renderIdeas(); renderQuotes(); }
   if (tab === 'stickers') renderStickerTray();
   if (tab === 'backlog') { renderDateStrip(); renderBacklog(); }
-  if (tab === 'settings') renderAccount();
+  if (tab === 'settings') { renderAccount(); loadInvites(); }
   renderPlacedStickers();          // each tab keeps its own stickers
   // On a phone you're usually deep in a long list when you switch tabs; land at the
   // top of the new one rather than in the middle of it.
