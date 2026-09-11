@@ -332,7 +332,7 @@
   .save-status {
     font-size: 11px;
     color: var(--muted);
-    margin: 0 0 3px;
+    margin: 0 0 16px;
     display: inline-block;
     text-transform: none;
     letter-spacing: 0.05em;
@@ -358,6 +358,15 @@
     margin-right: -6px;
     transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
   }
+  /* Pushed to the far end of the row: it isn't one of the lists, it's the drawer. */
+  .tab-settings {
+    margin-left: auto;
+    margin-right: 0;
+    padding: 7px 14px 6px;
+    display: flex; align-items: center;
+  }
+  .tab-icon { display: block; transition: transform 0.3s cubic-bezier(.2,.8,.3,1.2); }
+  .tab-settings:hover .tab-icon { transform: rotate(40deg); }
   .tab:not(.active):hover { background: #dde5e9; color: var(--text); transform: scale(1.06); }
   .tab.active { background: var(--card); color: var(--text); border-bottom-color: var(--card); z-index: 2; position: relative; }
   /* While dragging a task, the backlog tab becomes a drop target. */
@@ -757,6 +766,20 @@
   }
   .quote-who-input:focus { border-color: var(--btn-blue); }
 
+  .setting-group { padding: 4px 0 16px; border-bottom: 1px solid var(--border-light); margin-bottom: 16px; }
+  .setting-group:last-child { border-bottom: none; margin-bottom: 4px; }
+  .setting-title {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+    color: var(--muted); margin-bottom: 8px;
+  }
+  .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .setting-value { font-size: 12px; color: var(--text); word-break: break-word; }
+  .setting-note { font-size: 11px; color: var(--muted); line-height: 1.55; margin-bottom: 10px; max-width: 62ch; }
+  .setting-note code {
+    font-size: 10px; background: var(--bg);
+    border: 1px solid var(--border-light); border-radius: 4px; padding: 1px 4px;
+  }
+
   .summary-row { display: flex; gap: 8px; margin-bottom: 18px; }
   .summary-box { flex: 1; background: var(--card); border: 1px solid var(--border-light); padding: 12px; text-align: center; border-radius: 8px; }
   .summary-box .num { font-size: 18px; font-weight: 600; color: var(--text); }
@@ -798,11 +821,7 @@
   }
   .auth-switch:hover { color: var(--text); text-decoration: underline; }
 
-  .account-line { font-size: 10px; color: var(--muted); margin: 6px 0 14px; opacity: 0.85; letter-spacing: 0.04em; }
-  .account-line:empty { display: none; }
-  .account-line .account-link { cursor: pointer; text-decoration: underline; }
-  .account-line .account-link:hover { color: var(--text); }
-  .api-token { display: flex; gap: 6px; align-items: center; margin: -8px 0 14px; }
+  .api-token { display: flex; gap: 6px; align-items: center; margin: 10px 0 4px; }
   .api-token[hidden] { display: none; }
   .api-token input {
     flex: 1 1 auto; min-width: 0;
@@ -1139,11 +1158,6 @@
     </div>
     <input type="date" class="strip-jump" onchange="jumpToDate(this.value)" title="jump to date">
   </div>
-  <div class="account-line" id="accountLine"></div>
-  <div class="api-token" id="apiTokenRow" hidden>
-    <input id="apiTokenInput" readonly onclick="this.select()">
-    <button id="apiTokenCopy" onclick="copyApiToken()">copy</button>
-  </div>
 
   <div class="tabs">
     <div class="tab active" data-tab="day" onclick="switchTab('day')">Day</div>
@@ -1152,6 +1166,22 @@
     <div class="tab" data-tab="quotes" onclick="switchTab('quotes')">quotes</div>
     <div class="tab" data-tab="stickers" onclick="switchTab('stickers')">stickers</div>
     <div class="tab" data-tab="metrics" onclick="switchTab('metrics')">Metrics</div>
+    <div class="tab tab-settings" data-tab="settings" onclick="switchTab('settings')"
+         title="settings" role="button" aria-label="settings">
+      <svg class="tab-icon" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+        <circle cx="12" cy="12" r="4.4" fill="none" stroke="currentColor" stroke-width="2.1"/>
+        <g stroke="currentColor" stroke-width="2.9" stroke-linecap="butt">
+          <line x1="17.0" y1="12.0" x2="21.0" y2="12.0"/>
+          <line x1="15.5" y1="15.5" x2="18.4" y2="18.4"/>
+          <line x1="12.0" y1="17.0" x2="12.0" y2="21.0"/>
+          <line x1="8.5" y1="15.5" x2="5.6" y2="18.4"/>
+          <line x1="7.0" y1="12.0" x2="3.0" y2="12.0"/>
+          <line x1="8.5" y1="8.5" x2="5.6" y2="5.6"/>
+          <line x1="12.0" y1="7.0" x2="12.0" y2="3.0"/>
+          <line x1="15.5" y1="8.5" x2="18.4" y2="5.6"/>
+        </g>
+      </svg>
+    </div>
   </div>
 
   <!-- DAY VIEW -->
@@ -1256,6 +1286,36 @@
     <div class="mobile-only">on a phone these sit behind the page as decoration &mdash; open it on a computer to arrange them</div>
     <div class="theme-bar" id="stickerThemes"></div>
     <div class="sticker-tray" id="stickerTray"></div>
+  </div>
+
+  <!-- SETTINGS VIEW -->
+  <div id="settingsView" class="tab-panel" style="display:none;">
+    <div class="setting-group">
+      <div class="setting-title">account</div>
+      <div class="setting-row">
+        <div class="setting-value" id="settingsAccount">signed in on this device</div>
+        <button class="tray-reset" onclick="signOut()">log out</button>
+      </div>
+    </div>
+
+    <div class="setting-group">
+      <div class="setting-title">agent token</div>
+      <div class="setting-note">
+        a script or an agent can post tasks straight into your day with this &mdash; it's the
+        <code>Authorization</code> header in AGENT_API.md. it only ever reaches this account's
+        list, and anyone who has it can write to that list, so keep it to yourself.
+      </div>
+      <div class="setting-row">
+        <button class="tray-reset" id="apiTokenReveal" onclick="toggleApiToken()">show token</button>
+      </div>
+      <div class="api-token" id="apiTokenRow" hidden>
+        <input id="apiTokenInput" readonly onclick="this.select()">
+        <button id="apiTokenCopy" onclick="copyApiToken()">copy</button>
+      </div>
+      <div class="setting-note" id="apiTokenNone" hidden>
+        not available while signed in with the old shared passphrase &mdash; make an account to get one.
+      </div>
+    </div>
   </div>
 
   <!-- METRICS VIEW -->
@@ -1414,7 +1474,7 @@ function signInWith(data) {
   document.getElementById('authInvite').value = '';
   hideAuthGate();
   applyBoardOwnership();
-  renderAccountLine();
+  renderAccount();
   loadAll();
 }
 
@@ -1427,7 +1487,7 @@ function signOut() {
   daysMap = {}; backlog = []; ideas = []; quotes = [];
   currentDate = todayStr();
   renderAll();
-  renderAccountLine();
+  renderAccount();
   authMode = 'login';
   showAuthGate('');
 }
@@ -1443,40 +1503,38 @@ function applyAccount(a) {
   };
   writeAccount(account);
   applyBoardOwnership();
-  renderAccountLine();
+  renderAccount();
 }
 
-function renderAccountLine() {
-  const el = document.getElementById('accountLine');
-  if (!el) return;
-  el.innerHTML = '';
+function renderAccount() {
+  const who = document.getElementById('settingsAccount');
+  if (!who) return;
+  who.textContent = account && account.email
+    ? account.email
+    : (getToken() ? 'signed in on this device' : 'not signed in');
+
+  // No token to show while this browser is still on the pre-accounts passphrase.
+  const has = !!(account && account.apiToken);
+  const reveal = document.getElementById('apiTokenReveal');
   const row = document.getElementById('apiTokenRow');
-  if (!getToken()) { if (row) row.hidden = true; return; }
-
-  const who = document.createElement('span');
-  who.textContent = account && account.email ? account.email : 'signed in on this device';
-  el.appendChild(who);
-
-  const link = (text, onClick) => {
-    el.appendChild(document.createTextNode(' · '));
-    const a = document.createElement('span');
-    a.className = 'account-link';
-    a.textContent = text;
-    a.onclick = onClick;
-    el.appendChild(a);
-  };
-  if (account && account.apiToken) link('agent token', toggleApiToken);
-  link('log out', signOut);
+  const none = document.getElementById('apiTokenNone');
+  if (reveal) reveal.hidden = !has;
+  if (none) none.hidden = has;
+  if (row && !has) row.hidden = true;
+  if (row && !row.hidden) document.getElementById('apiTokenInput').value = account.apiToken;
 }
 
-// The token an agent posts with. Shown on demand rather than sitting on screen, since
-// anyone who reads it can write to this list.
+// Kept behind a click rather than sitting on screen: anyone who reads it can write to
+// this list, and a settings tab is exactly the kind of thing you open while sharing a
+// screen.
 function toggleApiToken() {
   const row = document.getElementById('apiTokenRow');
   const input = document.getElementById('apiTokenInput');
+  const reveal = document.getElementById('apiTokenReveal');
   if (!row || !input || !account || !account.apiToken) return;
   row.hidden = !row.hidden;
-  if (row.hidden) return;
+  if (reveal) reveal.textContent = row.hidden ? 'show token' : 'hide token';
+  if (row.hidden) { input.value = ''; return; }
   input.value = account.apiToken;
   input.focus();
   input.select();
@@ -1619,7 +1677,7 @@ async function loadAll() {
     if (!cached) { seedDays(); backlog = seedBacklog(); }
     setSaveStatus('offline');
     renderAll();
-    renderAccountLine();
+    renderAccount();
     showAuthGate('');
     return;
   }
@@ -1633,7 +1691,7 @@ async function loadAll() {
       daysMap = {}; backlog = []; ideas = []; quotes = [];
       setSaveStatus('error');
       renderAll();
-      renderAccountLine();
+      renderAccount();
       showAuthGate('that session has expired — sign in again.', true);
       return;
     }
@@ -1706,11 +1764,13 @@ function switchTab(tab) {
   document.getElementById('ideasView').style.display = tab === 'ideas' ? 'block' : 'none';
   document.getElementById('quotesView').style.display = tab === 'quotes' ? 'block' : 'none';
   document.getElementById('stickersView').style.display = tab === 'stickers' ? 'block' : 'none';
+  document.getElementById('settingsView').style.display = tab === 'settings' ? 'block' : 'none';
   if (tab === 'metrics') renderMetrics();
   if (tab === 'ideas') renderIdeas();
   if (tab === 'quotes') renderQuotes();
   if (tab === 'stickers') renderStickerTray();
   if (tab === 'backlog') { renderDateStrip(); renderBacklog(); }
+  if (tab === 'settings') renderAccount();
   renderPlacedStickers();          // each tab keeps its own stickers
   // On a phone you're usually deep in a long list when you switch tabs; land at the
   // top of the new one rather than in the middle of it.
@@ -3765,7 +3825,7 @@ loadMoodboardPhotos();
 loadExtraPins();
 applyBoardOwnership();
 initStickers();
-renderAccountLine();
+renderAccount();
 
 loadAll();
 </script>
