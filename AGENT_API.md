@@ -16,9 +16,11 @@ token** under the title, then copy it.
 
 Requests without a token, or with one that has been signed with the wrong secret, get `401`.
 
-The single shared passphrase this app started with (`Authorization: Bearer todolist123`)
-still works and still points at the owner's list, so scripts written before accounts
-existed keep running unchanged.
+The single shared passphrase this app started with also still works and still points at
+the owner's list, so scripts written before accounts existed keep running unchanged. It
+should be retired (unset `APP_SECRET`) once the owner has an account: it was documented
+here in plain text for eight days, on a file this project served publicly, so treat it as
+known to anyone who looked.
 
 ---
 

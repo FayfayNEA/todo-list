@@ -1,0 +1,5 @@
+# Docs are for the repo, not for serving: everything at the project root is a static
+# file on the live site, and the API doc used to publish the bearer token on it.
+*.md
+.claude
+.DS_Store
