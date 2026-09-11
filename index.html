@@ -503,6 +503,25 @@
   li.task-item.dragging { opacity: 0.4; }
   /* A touch has to hold a row still before it picks up, so the row has to *look*
      picked up — otherwise the only feedback is the page suddenly refusing to scroll. */
+  /* Where the row would land: a line in the gap rather than an inserted placeholder, so
+     nothing shifts and the list doesn't flinch as you move over it. Drawn by a
+     pseudo-element because the row's own box-shadow is transitioned, and an insertion
+     marker that fades in reads as lag. */
+  li.task-item.drop-above, li.task-item.drop-below { position: relative; }
+  li.task-item.drop-above::before,
+  li.task-item.drop-below::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0;
+    height: 3px;
+    border-radius: 3px;
+    background: var(--accent);
+  }
+  li.task-item.drop-above::before { top: -6px; }
+  li.task-item.drop-below::after { bottom: -6px; }
+  .section-heading.drop-target { color: var(--accent); border-bottom-color: var(--accent); }
+  .empty.drop-target, ul.drop-target { border-color: var(--accent); color: var(--accent); }
+  body.dragging-item ul[data-reorder] { min-height: 8px; }
   li.task-item.picked-up {
     transform: scale(1.04);
     border-color: var(--accent);
@@ -647,6 +666,8 @@
   li.backlog-item { align-items: stretch; }
 
   .empty { color: var(--muted); font-size: 11px; padding: 6px 0 4px; text-transform: none; letter-spacing: 0.04em; }
+  /* An empty section is a drop target, and a bare line of text is nothing to aim at. */
+  body.dragging-item .empty { padding: 14px 0 12px; border: 1px dashed var(--border-light); border-radius: 8px; text-align: center; }
   .completed-toggle { color: var(--muted); font-size: 11px; cursor: pointer; padding: 2px 0 8px; user-select: none; text-transform: none; letter-spacing: 0.04em; }
   .completed-toggle:hover { color: var(--text); }
 
@@ -1056,7 +1077,7 @@
       <div class="date-strip-scroll" id="dateStripScroll"></div>
       <button class="strip-nav" onclick="shiftStrip(1)">&rsaquo;</button>
     </div>
-    <div class="strip-hint mobile-only">hold a task for a moment, then drag it onto a day</div>
+    <div class="strip-hint" id="dayDragHint">drag a task to reorder it, or onto a day to move it</div>
     <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
 
     <div class="add-box">
@@ -1069,15 +1090,15 @@
       </select>
       <button onclick="submitDayInput()">add</button>
     </div>
-    <div class="section-heading work">work</div>
-    <ul id="dayListWork"></ul>
-    <div class="empty" id="dayEmptyWork" style="display:none;">nothing here</div>
+    <div class="section-heading work" data-reorder="work">work</div>
+    <ul id="dayListWork" data-reorder="work"></ul>
+    <div class="empty" id="dayEmptyWork" data-reorder="work" style="display:none;">nothing here</div>
     <div class="completed-toggle" id="completedToggleWork" style="display:none;" onclick="toggleCompleted('work')"></div>
     <ul id="dayListWorkDone" style="display:none;"></ul>
 
-    <div class="section-heading personal">personal</div>
-    <ul id="dayListPersonal"></ul>
-    <div class="empty" id="dayEmptyPersonal" style="display:none;">nothing here</div>
+    <div class="section-heading personal" data-reorder="personal">personal</div>
+    <ul id="dayListPersonal" data-reorder="personal"></ul>
+    <div class="empty" id="dayEmptyPersonal" data-reorder="personal" style="display:none;">nothing here</div>
     <div class="completed-toggle" id="completedTogglePersonal" style="display:none;" onclick="toggleCompleted('personal')"></div>
     <ul id="dayListPersonalDone" style="display:none;"></ul>
   </div>
@@ -1089,7 +1110,7 @@
       <div class="date-strip-scroll" id="dateStripScrollBacklog"></div>
       <button class="strip-nav" onclick="shiftStrip(1)">&rsaquo;</button>
     </div>
-    <div class="strip-hint" id="backlogDragHint">drag an item onto a day to schedule it</div>
+    <div class="strip-hint" id="backlogDragHint">drag an item to reorder it, or onto a day to schedule it</div>
     <div class="add-box">
       <textarea id="backlogInput" rows="1" placeholder="add to backlog..."></textarea>
     </div>
@@ -1101,13 +1122,13 @@
       <button onclick="submitBacklogInput()">add</button>
     </div>
 
-    <div class="section-heading work">work</div>
-    <ul id="backlogListWork"></ul>
-    <div class="empty" id="backlogEmptyWork" style="display:none;">backlog is empty</div>
+    <div class="section-heading work" data-reorder="work">work</div>
+    <ul id="backlogListWork" data-reorder="work"></ul>
+    <div class="empty" id="backlogEmptyWork" data-reorder="work" style="display:none;">backlog is empty</div>
 
-    <div class="section-heading personal">personal</div>
-    <ul id="backlogListPersonal"></ul>
-    <div class="empty" id="backlogEmptyPersonal" style="display:none;">backlog is empty</div>
+    <div class="section-heading personal" data-reorder="personal">personal</div>
+    <ul id="backlogListPersonal" data-reorder="personal"></ul>
+    <div class="empty" id="backlogEmptyPersonal" data-reorder="personal" style="display:none;">backlog is empty</div>
   </div>
 
   <!-- IDEAS VIEW -->
@@ -1545,7 +1566,9 @@ async function loadAll() {
 // Pull in anything agents posted while the app was open / on another device.
 async function refreshFromServer() {
   const key = getToken();
-  if (!key || pushTimer) return;
+  // Never while a row is being dragged: re-rendering the list detaches the row mid-gesture,
+  // so the drop lands on nothing and the clone is left behind.
+  if (!key || pushTimer || document.body.classList.contains('dragging-item')) return;
   try {
     const res = await fetch('/api/sync', { headers: { 'Authorization': 'Bearer ' + key } });
     if (!res.ok) return;
@@ -1684,7 +1707,12 @@ function buildItemLi(item, onToggle, onRemove, onDrop) {
 
   if (onDrop) {
     li.dataset.drag = 'on';
-    attachDrag(li, onDrop, () => moveToBacklog(item.id), () => toggleSubPanel(item.id));
+    attachDrag(li, {
+      onDay: onDrop,
+      onBacklog: () => moveToBacklog(item.id),
+      onTap: () => toggleSubPanel(item.id),
+      onReorder: (drop) => reorderDayItem(item.id, drop),
+    });
   }
 
   return li;
@@ -2057,8 +2085,8 @@ function holdPageStill(on) {
   else document.removeEventListener('touchmove', blockTouchScroll);
 }
 
-// The drop targets live at the top of the panel, which on a phone is usually scrolled
-// off. Bring them back before the finger starts moving, or there's nothing to drop on.
+// The drop targets at the top of the panel are usually scrolled off; used when switching
+// tabs so a new list opens at its top rather than halfway down.
 function bringDropTargetsIntoView() {
   const tabsRow = document.querySelector('.tabs');
   if (!tabsRow) return;
@@ -2067,7 +2095,14 @@ function bringDropTargetsIntoView() {
   window.scrollBy({ top: top - 8 });
 }
 
-function attachDrag(li, onDrop, onBacklog, onTap) {
+// While a row is being dragged the page can't scroll itself — on touch it is explicitly
+// held still — so holding near an edge scrolls instead. Without it you could only ever
+// move a task as far as one screen, which on a phone is two or three rows.
+const DRAG_EDGE = 76;        // how close to the edge starts it
+const DRAG_EDGE_SPEED = 16;  // px per frame at full tilt
+let edgeRaf = null;
+
+function attachDrag(li, opts = {}) {
   let down = false;
   let dragging = false;
   let armed = false;        // touch only: the hold finished, the row is picked up
@@ -2075,6 +2110,7 @@ function attachDrag(li, onDrop, onBacklog, onTap) {
   let holdTimer = null;
   let clone = null;
   let startX = 0, startY = 0;
+  let lastX = 0, lastY = 0;
   const THRESHOLD = 6;
 
   function cancelHold() {
@@ -2087,6 +2123,7 @@ function attachDrag(li, onDrop, onBacklog, onTap) {
     armed = false;
     byTouch = e.pointerType !== 'mouse';
     startX = e.clientX; startY = e.clientY;
+    lastX = e.clientX; lastY = e.clientY;
     try { li.setPointerCapture(e.pointerId); } catch (err) {}
     if (!byTouch) return;
     cancelHold();
@@ -2096,21 +2133,32 @@ function attachDrag(li, onDrop, onBacklog, onTap) {
       armed = true;
       li.classList.add('picked-up');
       holdPageStill(true);
-      bringDropTargetsIntoView();
       if (navigator.vibrate) { try { navigator.vibrate(8); } catch (err) {} }
     }, TOUCH_HOLD_MS);
   });
 
+  // Once a held row has picked up, the page has to stop scrolling under it.
   function startDrag(e) {
     dragging = true;
     li.classList.add('dragging');
     document.body.classList.add('dragging-item');
     clone = li.cloneNode(true);
+    // The row it was cloned from is faded to show where it came from; the thing under
+    // the finger should be solid.
+    clone.classList.remove('dragging', 'picked-up');
     clone.classList.add('drag-clone');
     clone.style.width = li.offsetWidth + 'px';
-    clone.style.left = (e.clientX - li.offsetWidth / 2) + 'px';
-    clone.style.top = (e.clientY - 20) + 'px';
     document.body.appendChild(clone);
+    placeClone(e.clientX, e.clientY);
+  }
+
+  // Kept on screen: a row is nearly as wide as a phone, so centring it on the finger
+  // hangs it off the edge. Vertical tracking is what a reorder needs to be exact.
+  function placeClone(x, y) {
+    const w = clone.offsetWidth;
+    const maxLeft = Math.max(6, window.innerWidth - w - 6);
+    clone.style.left = Math.min(Math.max(x - w / 2, 6), maxLeft) + 'px';
+    clone.style.top = (y - 20) + 'px';
   }
 
   // What's under the pointer: a date chip, or the backlog tab (if this item can go there).
@@ -2119,12 +2167,71 @@ function attachDrag(li, onDrop, onBacklog, onTap) {
     if (!el) return { chip: null, backlogTab: null };
     return {
       chip: el.closest('.date-chip'),
-      backlogTab: typeof onBacklog === 'function' ? el.closest('.tab[data-tab="backlog"]') : null
+      backlogTab: typeof opts.onBacklog === 'function' ? el.closest('.tab[data-tab="backlog"]') : null
     };
   }
+
+  // Where in a list this row would land. Expressed relative to a neighbour rather than as
+  // an index: what's stored is one array of both categories, and only the order within a
+  // category is ever visible, so an absolute index would mean nothing.
+  //   { category, at: 'before' | 'start' | 'end', beforeId }
+  function reorderTargetAt(x, y) {
+    if (typeof opts.onReorder !== 'function') return null;
+    const el = document.elementFromPoint(x, y);
+    if (!el) return null;
+    const zone = el.closest('[data-reorder]');
+    if (!zone) return null;
+    const category = zone.dataset.reorder;
+
+    const row = el.closest('li.task-item');
+    if (row && row !== li && row.dataset.id) {
+      const r = row.getBoundingClientRect();
+      if (y < r.top + r.height / 2) return { category, at: 'before', beforeId: row.dataset.id, row, edge: 'above' };
+      const next = row.nextElementSibling;
+      if (next && next.classList.contains('task-item')) {
+        return { category, at: 'before', beforeId: next.dataset.id, row, edge: 'below' };
+      }
+      return { category, at: 'end', row, edge: 'below' };
+    }
+    if (row === li) return null;                       // over itself: nothing to show
+    // A heading sits above its list, so dropping on one means the top of that section.
+    if (zone.classList.contains('section-heading')) return { category, at: 'start', zone };
+    return { category, at: 'end', zone };
+  }
+
   function clearDropHighlights() {
-    document.querySelectorAll('.date-chip.drop-target, .tab.drop-target')
+    document.querySelectorAll('.date-chip.drop-target, .tab.drop-target, [data-reorder].drop-target')
       .forEach(c => c.classList.remove('drop-target'));
+    document.querySelectorAll('li.task-item.drop-above, li.task-item.drop-below')
+      .forEach(c => c.classList.remove('drop-above', 'drop-below'));
+  }
+
+  function updateDropFeedback(x, y) {
+    clearDropHighlights();
+    const { chip, backlogTab } = dropTargetsAt(x, y);
+    if (chip) { chip.classList.add('drop-target'); return; }
+    if (backlogTab) { backlogTab.classList.add('drop-target'); return; }
+    const drop = reorderTargetAt(x, y);
+    if (!drop) return;
+    if (drop.row) drop.row.classList.add(drop.edge === 'above' ? 'drop-above' : 'drop-below');
+    else if (drop.zone) drop.zone.classList.add('drop-target');
+  }
+
+  function autoScrollTick() {
+    edgeRaf = null;
+    if (!dragging) return;
+    const dir = lastY < DRAG_EDGE ? -1 : (lastY > window.innerHeight - DRAG_EDGE ? 1 : 0);
+    if (!dir) return;
+    const over = dir < 0 ? DRAG_EDGE - lastY : lastY - (window.innerHeight - DRAG_EDGE);
+    const step = Math.max(3, Math.round(DRAG_EDGE_SPEED * Math.min(1, over / DRAG_EDGE)));
+    const was = window.scrollY;
+    window.scrollBy(0, dir * step);
+    // The pointer hasn't moved but the page has, so what's underneath it has changed.
+    if (window.scrollY !== was) updateDropFeedback(lastX, lastY);
+    edgeRaf = requestAnimationFrame(autoScrollTick);
+  }
+  function stopAutoScroll() {
+    if (edgeRaf) { cancelAnimationFrame(edgeRaf); edgeRaf = null; }
   }
 
   li.addEventListener('pointermove', (e) => {
@@ -2148,12 +2255,10 @@ function attachDrag(li, onDrop, onBacklog, onTap) {
         return;
       }
     }
-    clone.style.left = (e.clientX - clone.offsetWidth / 2) + 'px';
-    clone.style.top = (e.clientY - 20) + 'px';
-    clearDropHighlights();
-    const { chip, backlogTab } = dropTargetsAt(e.clientX, e.clientY);
-    if (chip) chip.classList.add('drop-target');
-    else if (backlogTab) backlogTab.classList.add('drop-target');
+    lastX = e.clientX; lastY = e.clientY;
+    placeClone(e.clientX, e.clientY);
+    updateDropFeedback(e.clientX, e.clientY);
+    if (!edgeRaf) edgeRaf = requestAnimationFrame(autoScrollTick);
   });
 
   function endDrag(e) {
@@ -2163,31 +2268,72 @@ function attachDrag(li, onDrop, onBacklog, onTap) {
     down = false;
     armed = false;
     holdPageStill(false);
+    stopAutoScroll();
     li.classList.remove('picked-up');
     if (!dragging) {
       // Pointer capture retargets the click to the li, so a plain tap is handled here.
       // pointercancel means the browser took the gesture over to scroll the page, which
       // is never a tap — counting it was popping a card open on every scroll.
       const moved = Math.abs(e.clientX - startX) > THRESHOLD || Math.abs(e.clientY - startY) > THRESHOLD;
-      if (wasDown && !wasArmed && !moved && e.type === 'pointerup' && typeof onTap === 'function') onTap();
+      if (wasDown && !wasArmed && !moved && e.type === 'pointerup' && typeof opts.onTap === 'function') opts.onTap();
       return;
     }
     dragging = false;
     li.classList.remove('dragging');
     document.body.classList.remove('dragging-item');
     try { li.releasePointerCapture(e.pointerId); } catch (err) {}
-    clearDropHighlights();
+
     const { chip, backlogTab } = dropTargetsAt(e.clientX, e.clientY);
+    const drop = chip || backlogTab ? null : reorderTargetAt(e.clientX, e.clientY);
+    clearDropHighlights();
     if (clone) { clone.remove(); clone = null; }
-    if (chip && typeof onDrop === 'function') {
-      onDrop(chip.dataset.date);
-    } else if (backlogTab && typeof onBacklog === 'function') {
-      onBacklog();
-    }
+
+    if (chip && typeof opts.onDay === 'function') opts.onDay(chip.dataset.date);
+    else if (backlogTab && typeof opts.onBacklog === 'function') opts.onBacklog();
+    else if (drop && typeof opts.onReorder === 'function') opts.onReorder(drop);
   }
 
   li.addEventListener('pointerup', endDrag);
   li.addEventListener('pointercancel', endDrag);
+}
+
+// Order inside a list is the priority order, so dropping a row between two others is how
+// it gets set. Dropping into the other section's list moves it there, which is also the
+// only way to change a task's category after it's been added.
+function moveWithinList(list, id, drop) {
+  const from = list.findIndex(i => i.id === id);
+  if (from < 0) return false;
+  const [item] = list.splice(from, 1);
+  const wantPersonal = drop.category === 'personal';
+  item.category = wantPersonal ? 'personal' : 'work';
+  const sameSection = (i) => (i.category === 'personal') === wantPersonal;
+
+  let at;
+  if (drop.at === 'before' && drop.beforeId) {
+    at = list.findIndex(i => i.id === drop.beforeId);
+    if (at < 0) at = list.length;
+  } else if (drop.at === 'start') {
+    at = list.findIndex(sameSection);
+    if (at < 0) at = list.length;
+  } else {
+    let last = -1;
+    list.forEach((i, idx) => { if (sameSection(i)) last = idx; });
+    at = last + 1;
+  }
+  list.splice(at, 0, item);
+  return true;
+}
+
+function reorderDayItem(id, drop) {
+  if (!moveWithinList(daysMap[currentDate] || [], id, drop)) return;
+  saveDays();
+  renderDay();
+}
+
+function reorderBacklog(id, drop) {
+  if (!moveWithinList(backlog, id, drop)) return;
+  saveBacklog();
+  renderBacklog();
 }
 
 function toggleDayItem(id) {
@@ -2332,6 +2478,7 @@ function renderBacklog() {
   function buildBacklogLi(item) {
     const li = document.createElement('li');
     li.className = 'task-item backlog-item';
+    li.dataset.id = item.id;          // what a reorder drop aims at
 
     const topRow = document.createElement('div');
     topRow.className = 'top-row';
@@ -2365,7 +2512,10 @@ function renderBacklog() {
     li.appendChild(topRow);
     li.appendChild(scheduleRow);
 
-    attachDrag(li, (d) => scheduleBacklogItem(item.id, d));
+    attachDrag(li, {
+      onDay: (d) => scheduleBacklogItem(item.id, d),
+      onReorder: (drop) => reorderBacklog(item.id, drop),
+    });
     return li;
   }
 
@@ -3329,8 +3479,10 @@ function handleMoodboardFile(e) {
 
 // The gesture differs by input: a mouse drags straight away, a finger has to hold first.
 if (window.matchMedia('(hover: none)').matches) {
-  const hint = document.getElementById('backlogDragHint');
-  if (hint) hint.textContent = 'hold an item for a moment, then drag it onto a day';
+  const day = document.getElementById('dayDragHint');
+  if (day) day.textContent = 'hold a task to pick it up, then drag to reorder or onto a day';
+  const backlog = document.getElementById('backlogDragHint');
+  if (backlog) backlog.textContent = 'hold an item to pick it up, then drag to reorder or onto a day';
 }
 
 document.getElementById('moodboardFileInput').addEventListener('change', handleMoodboardFile);
