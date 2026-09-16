@@ -932,11 +932,12 @@
      Rather than drop it, shrink it and tuck it behind the card as soft wallpaper —
      non-interactive, since dragging tiny art around a phone screen isn't worth it. */
   @media (max-width: 929px) {
-    .moodboard { z-index: 0; opacity: 0.5; }
-    /* The card spans the whole screen here, so the art can only read as background if
-       it shows through: drop the paper texture and let the translucent content veil it. */
-    .wrap { background-image: none; }
-    .content { background: rgba(240, 243, 246, 0.82); }
+    .moodboard { z-index: 0; opacity: 0.45; }
+    /* The card is nearly the whole screen here, so anything behind it bleeds through a
+       translucent panel — a polaroid was showing through the tab bar. Keep the card
+       opaque and let the art sit around it instead of under the text. */
+    .wrap { background-image: none; background-color: var(--paper); }
+    .content { background: var(--bg); }
     .moodboard .sticker, .moodboard .pin { pointer-events: none; }
     .sticker-grip, .sticker-rotate, .sticker-size, .pin-remove { display: none; }   /* board is background-only here */
     .moodboard .sticker:hover, .moodboard .pin:hover { animation: none; }
@@ -1863,6 +1864,10 @@ function mk(text, category) { return { id: crypto.randomUUID(), text, done: fals
 let saveState = 'saved';
 let pushTimer = null;
 let pushFailed = false;
+let pushInFlight = false;
+// Bumped on every local edit. A pull that started before an edit must not apply
+// over the top of it.
+let localEdits = 0;
 
 function setSaveStatus(state) {
   saveState = state;
@@ -1879,6 +1884,7 @@ function saveDays() { queuePush(); }
 function saveBacklog() { queuePush(); }
 
 function queuePush() {
+  localEdits++;
   writeCache();
   setSaveStatus('saving');
   if (pushTimer) clearTimeout(pushTimer);
@@ -1889,6 +1895,7 @@ async function pushState() {
   pushTimer = null;
   const key = getToken();
   if (!key) { setSaveStatus('offline'); showAuthGate(''); return; }
+  pushInFlight = true;
   try {
     const res = await fetch('/api/sync', {
       method: 'PUT',
@@ -1903,6 +1910,8 @@ async function pushState() {
     console.warn('push failed', e);
     pushFailed = true;
     setSaveStatus('error');
+  } finally {
+    pushInFlight = false;
   }
 }
 
@@ -1995,11 +2004,20 @@ async function refreshFromServer() {
   const key = getToken();
   // Never while a row is being dragged: re-rendering the list detaches the row mid-gesture,
   // so the drop lands on nothing and the clone is left behind.
-  if (!key || pushTimer || document.body.classList.contains('dragging-item')) return;
+  //
+  // And never while our own edits are still on their way to the server, or after a
+  // failed save: the server's copy is the older one, and applying it would wipe work
+  // that hasn't landed yet. Retry the save instead.
+  if (!key || document.body.classList.contains('dragging-item')) return;
+  if (pushTimer || pushInFlight) return;
+  if (pushFailed) { pushState(); return; }
+  const editsAtStart = localEdits;
   try {
     const res = await fetch('/api/sync', { headers: { 'Authorization': 'Bearer ' + key } });
     if (!res.ok) return;
     const state = await res.json();
+    // Something was typed while that request was in the air — keep the local copy.
+    if (localEdits !== editsAtStart || pushTimer || pushInFlight) return;
     applyAccount(state.account);
     if (applyState(state)) { writeCache(); renderAll(); if (saveState !== 'saving') setSaveStatus('saved'); }
   } catch (e) {}
