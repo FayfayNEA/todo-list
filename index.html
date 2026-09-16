@@ -2077,6 +2077,40 @@ async function refreshFromServer() {
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshFromServer(); });
 window.addEventListener('focus', refreshFromServer);
 
+// ---------- KEEPING THE PAGE ITSELF CURRENT ----------
+// A phone keeps a Safari tab alive for weeks and restores it without ever asking for the
+// HTML again, so it can sit on a build from last week while syncing today's data quite
+// happily — old tab names, none of the newer layout, and no clue anything is wrong. The
+// data is live because that's fetched; the page isn't, because it never is. So ask what
+// the current page is, and if it moved, pick it up.
+let pageVersion = null;
+
+function safeToReload() {
+  // Never over the top of work in progress.
+  if (pushTimer || pushInFlight || pushFailed) return false;
+  if (document.body.classList.contains('dragging-item')) return false;
+  if (document.querySelector('.photo-lightbox.open, .sub-pop.open, .auth-gate:not([hidden])')) return false;
+  const el = document.activeElement;
+  if (el && /^(TEXTAREA|INPUT)$/.test(el.tagName) && el.value) return false;
+  return true;
+}
+
+async function checkPageVersion() {
+  if (document.hidden) return;
+  try {
+    const res = await fetch(location.pathname, { method: 'HEAD', cache: 'no-store' });
+    if (!res.ok) return;
+    // The etag is a hash of the file, so a redeploy of identical content won't churn.
+    const v = res.headers.get('etag');
+    if (!v) return;
+    if (pageVersion === null) { pageVersion = v; return; }
+    if (v !== pageVersion && safeToReload()) location.reload();
+  } catch (e) {}
+}
+
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkPageVersion(); });
+window.addEventListener('focus', checkPageVersion);
+
 // A brand new account opens on an empty day. What used to be here was one person's real
 // task list, which is not what someone else's first sign-in should show them.
 function seedDays() {
@@ -4212,6 +4246,8 @@ initStickers();
 renderAccount();
 
 loadAll();
+// Record which build this tab is running, so a later check can tell it has fallen behind.
+checkPageVersion();
 </script>
 </body>
 </html>
