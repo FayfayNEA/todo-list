@@ -1833,8 +1833,13 @@ function readCache() {
   } catch (e) {}
   return null;
 }
-function writeCache() {
-  try { localStorage.setItem(cacheKey(), JSON.stringify({ days: daysMap, backlog, ideas, quotes })); } catch (e) {}
+// `dirty` means this copy holds edits the server hasn't accepted yet. A phone kills a
+// backgrounded tab mid-save all the time, so the next load has to be able to tell
+// "older than the server" from "newer than the server, just never sent".
+function writeCache(dirty) {
+  try {
+    localStorage.setItem(cacheKey(), JSON.stringify({ days: daysMap, backlog, ideas, quotes, dirty: !!dirty }));
+  } catch (e) {}
 }
 
 let daysMap = {};
@@ -1885,11 +1890,19 @@ function saveBacklog() { queuePush(); }
 
 function queuePush() {
   localEdits++;
-  writeCache();
+  writeCache(true);
   setSaveStatus('saving');
   if (pushTimer) clearTimeout(pushTimer);
   pushTimer = setTimeout(pushState, 600);
 }
+
+// A phone freezes a backgrounded tab, and anything still sitting in the debounce dies
+// with it. Send it now, while the page is still allowed to run.
+function flushPush() {
+  if (pushTimer || pushFailed) { clearTimeout(pushTimer); pushTimer = null; pushState(); }
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) flushPush(); });
+window.addEventListener('pagehide', flushPush);
 
 async function pushState() {
   pushTimer = null;
@@ -1905,6 +1918,9 @@ async function pushState() {
     if (res.status === 401) { clearToken(); pushFailed = true; setSaveStatus('error'); showAuthGate('that session has expired — sign in again.', true); return; }
     if (!res.ok) throw new Error('HTTP ' + res.status);
     pushFailed = false;
+    // The server has it now, so the cache is no longer ahead — unless something was
+    // typed while this request was in the air, which leaves its own push queued.
+    if (!pushTimer) writeCache(false);
     setSaveStatus('saved');
   } catch (e) {
     console.warn('push failed', e);
@@ -1942,6 +1958,35 @@ function renderAll() {
   renderMetrics();
 }
 
+// Fold unsent local work into what the server has. Local wins where both know an id —
+// it's the copy with edits that never landed — and anything only the server has is kept,
+// so work done on the other device isn't thrown away either. The cost is that deleting
+// something on one device while the other is holding unsent edits can bring it back once;
+// losing a just-written quote is the worse of the two.
+function mergeById(local, remote) {
+  const out = Array.isArray(local) ? local.slice() : [];
+  const seen = new Set(out.map(x => x && x.id));
+  for (const item of (Array.isArray(remote) ? remote : [])) {
+    if (item && !seen.has(item.id)) { out.push(item); seen.add(item.id); }
+  }
+  return out;
+}
+
+function mergeState(remote) {
+  const days = {};
+  const localDays = daysMap && typeof daysMap === 'object' ? daysMap : {};
+  const remoteDays = remote && typeof remote.days === 'object' && remote.days ? remote.days : {};
+  for (const date of new Set([...Object.keys(localDays), ...Object.keys(remoteDays)])) {
+    days[date] = mergeById(localDays[date], remoteDays[date]);
+  }
+  return {
+    days,
+    backlog: mergeById(backlog, remote && remote.backlog),
+    ideas: mergeById(ideas, remote && (remote.ideas || remote.likes)),
+    quotes: mergeById(quotes, remote && remote.quotes),
+  };
+}
+
 async function loadAll() {
   // Show cached data immediately if we have it.
   const cached = readCache();
@@ -1976,18 +2021,25 @@ async function loadAll() {
     applyAccount(state.account);
 
     const serverEmpty = !state || ((!state.days || Object.keys(state.days).length === 0) && (!state.backlog || state.backlog.length === 0));
-    if (serverEmpty && !cached) {
+    if (cached && cached.dirty) {
+      // Last session ended before its save landed — a phone closing the tab is enough.
+      // The cache is the newer copy, so merge the server into it and send the result
+      // rather than letting the older copy overwrite the work.
+      applyState(mergeState(state));
+      writeCache(true);
+      pushState();
+    } else if (serverEmpty && !cached) {
       // First run ever: seed and push.
       seedDays();
       backlog = seedBacklog();
-      writeCache();
+      writeCache(true);
       pushState();
     } else if (serverEmpty && cached) {
       // Server blank but we have local data: keep local, push it up.
       pushState();
     } else {
       applyState(state);
-      writeCache();
+      writeCache(false);
       setSaveStatus('saved');
     }
     renderAll();
@@ -2019,7 +2071,7 @@ async function refreshFromServer() {
     // Something was typed while that request was in the air — keep the local copy.
     if (localEdits !== editsAtStart || pushTimer || pushInFlight) return;
     applyAccount(state.account);
-    if (applyState(state)) { writeCache(); renderAll(); if (saveState !== 'saving') setSaveStatus('saved'); }
+    if (applyState(state)) { writeCache(false); renderAll(); if (saveState !== 'saving') setSaveStatus('saved'); }
   } catch (e) {}
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshFromServer(); });
