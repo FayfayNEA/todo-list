@@ -4,8 +4,8 @@ import crypto from 'node:crypto';
 const OPTS = { access: 'private', token: process.env.BLOB_READ_WRITE_TOKEN };
 
 // This checklist began as one person's, stored at the top level of the bucket. That
-// account keeps the id `owner`, so its data stays exactly where it already is — nothing
-// is copied or moved — and the single passphrase it was built around still lands on it.
+// account keeps the id `owner`, so its data stays exactly where it already is. Nothing
+// is copied or moved, and the single passphrase it was built around still lands on it.
 export const OWNER_UID = 'owner';
 
 const statePath = (uid) => (uid === OWNER_UID ? 'state.json' : `u/${uid}/state.json`);
@@ -174,7 +174,7 @@ export async function createUser(email, password) {
 
 // ---------- request auth ----------
 // Three credentials can turn up: a session token from the app, a long-lived API token an
-// agent was handed, and the original single-user passphrase — which still works, and still
+// agent was handed, and the original single-user passphrase, which still works, and still
 // means the owner's list, so nothing set up before accounts existed has to change.
 export function authorize(req) {
   const header = req.headers['authorization'] || '';

@@ -1,4 +1,4 @@
-// Sending invitations. Resend's REST API over fetch — no SDK, since this is one request.
+// Sending invitations. Resend's REST API over fetch, no SDK, since this is one request.
 const RESEND_KEY = (process.env.RESEND_API_KEY || '').trim();
 const MAIL_FROM = (process.env.MAIL_FROM || '').trim();
 
