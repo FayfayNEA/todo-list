@@ -3518,9 +3518,15 @@ function initStickers() {
   renderPlacedStickers();
 }
 
-// Items keep exactly the spot they were given. Forcing them fully inside the window
-// was worse than letting an edge one be partly cut: it piled them at the edges and
-// pushed them onto the card. Only rescue something that is completely out of sight.
+// Positions are held as an offset from the middle of the window, so a narrower window
+// carries the outer items off the edge and they arrive half cut off.
+//
+// Pull a spilling item back until it is whole, but only within the empty band beside the
+// card. Sliding one over the card to save it was the worse trade, so where the band is
+// too narrow to hold it (a phone, where the art is wallpaper behind the card anyway) the
+// whole window is fair game instead. Anything already inside is left exactly where it is,
+// and none of this is written back: widen the window again and everything returns to the
+// spot it was given.
 function clampIntoView(el, wantLeft, wantTop) {
   const L = Math.round(wantLeft), T = Math.round(wantTop);
   el.style.left = L + 'px';
@@ -3529,13 +3535,38 @@ function clampIntoView(el, wantLeft, wantTop) {
   const r = el.getBoundingClientRect();
   if (!r.width || !r.height) return;          // image not decoded yet; re-run on load
 
-  const KEEP = 24;                            // leave this much of it reachable
+  const PAD = 6;
+  // These are tilted, so the painted box is wider than the layout box and starts before
+  // it. Measuring the difference converts a painted position back into a `left`.
   const spillL = L - r.left, spillT = T - r.top;
   let left = L, top = T;
-  if (r.right < KEEP) left = Math.round(KEEP - r.width + spillL);
-  else if (r.left > window.innerWidth - KEEP) left = Math.round(window.innerWidth - KEEP + spillL);
-  if (r.bottom < KEEP) top = Math.round(KEEP - r.height + spillT);
-  else if (r.top > window.innerHeight - KEEP) top = Math.round(window.innerHeight - KEEP + spillT);
+
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const centre = vw / 2;
+  const cardHalf = Math.min(450, centre);     // the card is centred, max-width 900
+  const cardLeft = centre - cardHalf, cardRight = centre + cardHalf;
+  const onLeft = (r.left + r.right) / 2 < centre;
+  const bandFits = r.width + PAD * 2 <= cardLeft;
+  // Below this the card fills the screen and the art is wallpaper behind it, so there is
+  // no band to aim for and covering the card is the point.
+  const wallpaper = vw <= 929;
+
+  if (bandFits) {
+    const lo = onLeft ? PAD : Math.max(PAD, cardRight + PAD);
+    const hi = onLeft ? Math.min(vw - r.width - PAD, cardLeft - r.width - PAD) : vw - r.width - PAD;
+    if (hi >= lo) left = Math.round(Math.min(Math.max(r.left, lo), hi) + spillL);
+  } else if (wallpaper) {
+    const lo = PAD, hi = vw - r.width - PAD;
+    if (hi >= lo) left = Math.round(Math.min(Math.max(r.left, lo), hi) + spillL);
+  } else if (r.right > cardLeft && r.left < cardRight) {
+    // No band wide enough to hold it, so it cannot be both whole and off the card.
+    // Being partly cut at the window edge beats being painted across the checklist.
+    const target = onLeft ? cardLeft - r.width - PAD : cardRight + PAD;
+    left = Math.round(target + spillL);
+  }
+
+  const tlo = PAD, thi = vh - r.height - PAD;
+  if (thi >= tlo) top = Math.round(Math.min(Math.max(r.top, tlo), thi) + spillT);
 
   if (left !== L) el.style.left = left + 'px';
   if (top !== T) el.style.top = top + 'px';
