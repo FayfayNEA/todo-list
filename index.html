@@ -389,6 +389,14 @@
     from { opacity: 0; transform: translateY(6px); }
     to { opacity: 1; transform: translateY(0); }
   }
+  /* A drag is a pointer gesture, not a text selection. Without this, pulling a row up
+     the list sweeps the cursor across the section headings and paints them blue, so the
+     page looks like it is being read rather than rearranged. */
+  body.dragging-item, body.dragging-item * {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
   /* While dragging a task, the backlog tab becomes a drop target. */
   body.dragging-item .tab[data-tab="backlog"] { border-color: var(--accent); border-style: dashed; color: var(--accent); }
   .tab.drop-target { background: var(--highlight); border-color: var(--accent); border-style: solid; color: var(--text); z-index: 3; position: relative; }
@@ -536,7 +544,7 @@
   li.task-item.leaving { opacity: 0; transform: translateX(24px); }
   li.task-item.dragging { opacity: 0.4; }
   /* A touch has to hold a row still before it picks up, so the row has to *look*
-     picked up — otherwise the only feedback is the page suddenly refusing to scroll. */
+     picked up, otherwise the only feedback is the page suddenly refusing to scroll. */
   /* Where the row would land: a line in the gap rather than an inserted placeholder, so
      nothing shifts and the list doesn't flinch as you move over it. Drawn by a
      pseudo-element because the row's own box-shadow is transitioned, and an insertion
@@ -731,7 +739,7 @@
   .metrics-detail .ln.not-done .mk { color: var(--border); }
   .metrics-detail .none { font-size: 11px; color: var(--muted); text-transform: none; letter-spacing: 0.04em; }
   /* A quote isn't a task: no checkbox, nothing to complete, and the words are the
-     point — so they get room, a slant, and the mark hanging in the left margin. */
+     point, so they get room, a slant, and the mark hanging in the left margin. */
   .quote-card {
     position: relative;
     background: var(--card);
@@ -833,7 +841,7 @@
     background: rgba(43, 51, 32, 0.82);
     display: flex; align-items: center; justify-content: center; padding: 20px;
   }
-  /* `hidden` alone loses to the display:flex above — make it explicit. */
+  /* `hidden` alone loses to the display:flex above, so make it explicit. */
   .auth-gate[hidden] { display: none !important; }
   .auth-card {
     background: var(--card); border: 1px solid var(--border); border-radius: 10px;
@@ -867,7 +875,7 @@
     box-shadow: 0 0 0 3px rgba(142, 194, 230, 0.3);
     background: var(--card);
   }
-  /* A field that has something in it settles into a darker edge — the typing shows. */
+  /* A field that has something in it settles into a darker edge, so the typing shows. */
   .auth-card input:not(:placeholder-shown) { border-color: var(--btn-blue-hover); }
   /* Appears on the way into sign-up, so it should slide in rather than snap. */
   #authInvite:not([hidden]) { animation: fieldIn 0.28s cubic-bezier(.22,.9,.32,1); }
@@ -929,12 +937,15 @@
      starts bare and fills up with theirs. */
   body.guest-board .moodboard .pin:not(.extra) { display: none; }
   /* Below this the card fills the width, so there's no margin for the board to live in.
-     Rather than drop it, shrink it and tuck it behind the card as soft wallpaper —
+     Rather than drop it, shrink it and tuck it behind the card as soft wallpaper:
      non-interactive, since dragging tiny art around a phone screen isn't worth it. */
   @media (max-width: 929px) {
-    .moodboard { z-index: 0; opacity: 0.45; }
+    /* Opaque enough to sit on top of the paper. Below about 0.8 the dot grid behind
+       shows straight through the art, which reads as dots printed over the stickers
+       rather than stickers laid on the page. */
+    .moodboard { z-index: 0; opacity: 0.8; }
     /* The card is nearly the whole screen here, so anything behind it bleeds through a
-       translucent panel — a polaroid was showing through the tab bar. Keep the card
+       translucent panel: a polaroid was showing through the tab bar. Keep the card
        opaque and let the art sit around it instead of under the text. */
     .wrap { background-image: none; background-color: var(--paper); }
     .content { background: var(--bg); }
@@ -952,7 +963,17 @@
     .content { padding: 18px 14px 24px; }
     .tabs { overflow-x: auto; scrollbar-width: none; }
     .tabs::-webkit-scrollbar { display: none; }
-    .tab { flex: 0 0 auto; }
+    /* Six tabs at the desktop padding run about 40px wider than a narrow phone, which
+       strands the settings gear off the right edge with nothing to say it is there.
+       Tighten the padding so the whole row fits instead of relying on a scroll nobody
+       can see. */
+    .tab { flex: 0 0 auto; padding-left: 11px; padding-right: 11px; }
+  }
+  /* The oldest small phones need a little more taken off again. */
+  @media (max-width: 360px) {
+    .tab { padding-left: 8px; padding-right: 8px; letter-spacing: 0; }
+  }
+  @media (max-width: 929px) {
     .app-header { gap: 8px; }
     .strip-jump { font-size: 12px; }
     /* comfortable touch targets */
@@ -1166,7 +1187,7 @@
       <input class="reflect-input" id="ideaWhen" placeholder="someday, next spring, after the raise...">
 
       <label class="reflect-label" for="ideaHow">how</label>
-      <input class="reflect-input" id="ideaHow" placeholder="what it takes — gear, cost, a class...">
+      <input class="reflect-input" id="ideaHow" placeholder="what it takes: gear, cost, a class...">
 
       <label class="reflect-label" for="ideaWhy">why</label>
       <input class="reflect-input" id="ideaWhy" placeholder="what draws you to it...">
@@ -1342,10 +1363,10 @@
     <div class="empty" id="backlogEmptyPersonal" data-reorder="personal" style="display:none;">backlog is empty</div>
   </div>
 
-  <!-- GROWTH VIEW — ideas and quotes, one tab, a section each -->
+  <!-- GROWTH VIEW: ideas and quotes, one tab, a section each -->
   <div id="growthView" class="tab-panel" style="display:none;">
     <div class="add-box">
-      <textarea id="growthInput" rows="2" placeholder="an idea — a hobby, a splurge, something to try..."></textarea>
+      <textarea id="growthInput" rows="2" placeholder="an idea: a hobby, a splurge, something to try..."></textarea>
       <div class="hint" id="growthHint">enter to add &middot; shift + enter for a line break &middot; tap one to open it</div>
     </div>
     <div class="add-row-outside">
@@ -1588,7 +1609,7 @@ async function submitAuth() {
     }
     signInWith(data);
   } catch (e) {
-    setAuthMsg("couldn't reach the server — try again", true);
+    setAuthMsg("couldn't reach the server, try again", true);
   } finally {
     btn.disabled = false;
     renderAuthMode();
@@ -1712,7 +1733,7 @@ async function createInvite() {
     renderInvites();
     // The invitation exists either way; only the delivery is in question, so say which.
     if (out.data.sent) setInviteMsg('sent to ' + email, 'good');
-    else setInviteMsg((out.data.reason || "couldn't email it") + ' — copy the link and send it yourself', 'bad');
+    else setInviteMsg((out.data.reason || "couldn't email it") + ', copy the link and send it yourself', 'bad');
   } catch (e) {
     setInviteMsg("couldn't reach the server", 'bad');
   } finally {
@@ -1736,7 +1757,7 @@ function inviteLink(code) {
 
 function copyInvite(code) {
   const link = inviteLink(code);
-  const done = () => setInviteMsg('link copied — send it however you like', 'good');
+  const done = () => setInviteMsg('link copied, send it however you like', 'good');
   if (navigator.clipboard) navigator.clipboard.writeText(link).then(done, () => setInviteMsg(link));
   else setInviteMsg(link);
 }
@@ -1748,7 +1769,7 @@ function renderInvites() {
   if (!mailWorks) {
     const note = document.createElement('div');
     note.className = 'setting-note';
-    note.textContent = 'email sending isn\u2019t set up, so invitations are made but not delivered — copy the link and send it yourself.';
+    note.textContent = 'email sending isn\u2019t set up, so invitations are made but not delivered, so copy the link and send it yourself.';
     list.appendChild(note);
   }
   invites.forEach(inv => {
@@ -1915,10 +1936,10 @@ async function pushState() {
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
       body: JSON.stringify({ days: daysMap, backlog, ideas, quotes })
     });
-    if (res.status === 401) { clearToken(); pushFailed = true; setSaveStatus('error'); showAuthGate('that session has expired — sign in again.', true); return; }
+    if (res.status === 401) { clearToken(); pushFailed = true; setSaveStatus('error'); showAuthGate('that session has expired, sign in again.', true); return; }
     if (!res.ok) throw new Error('HTTP ' + res.status);
     pushFailed = false;
-    // The server has it now, so the cache is no longer ahead — unless something was
+    // The server has it now, so the cache is no longer ahead, unless something was
     // typed while this request was in the air, which leaves its own push queued.
     if (!pushTimer) writeCache(false);
     setSaveStatus('saved');
@@ -1958,8 +1979,8 @@ function renderAll() {
   renderMetrics();
 }
 
-// Fold unsent local work into what the server has. Local wins where both know an id —
-// it's the copy with edits that never landed — and anything only the server has is kept,
+// Fold unsent local work into what the server has. Local wins where both know an id:
+// it's the copy with edits that never landed, and anything only the server has is kept,
 // so work done on the other device isn't thrown away either. The cost is that deleting
 // something on one device while the other is holding unsent edits can bring it back once;
 // losing a just-written quote is the worse of the two.
@@ -2012,7 +2033,7 @@ async function loadAll() {
       setSaveStatus('error');
       renderAll();
       renderAccount();
-      showAuthGate('that session has expired — sign in again.', true);
+      showAuthGate('that session has expired, sign in again.', true);
       return;
     }
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -2022,7 +2043,7 @@ async function loadAll() {
 
     const serverEmpty = !state || ((!state.days || Object.keys(state.days).length === 0) && (!state.backlog || state.backlog.length === 0));
     if (cached && cached.dirty) {
-      // Last session ended before its save landed — a phone closing the tab is enough.
+      // Last session ended before its save landed, and a phone closing the tab is enough.
       // The cache is the newer copy, so merge the server into it and send the result
       // rather than letting the older copy overwrite the work.
       applyState(mergeState(state));
@@ -2068,7 +2089,7 @@ async function refreshFromServer() {
     const res = await fetch('/api/sync', { headers: { 'Authorization': 'Bearer ' + key } });
     if (!res.ok) return;
     const state = await res.json();
-    // Something was typed while that request was in the air — keep the local copy.
+    // Something was typed while that request was in the air, so keep the local copy.
     if (localEdits !== editsAtStart || pushTimer || pushInFlight) return;
     applyAccount(state.account);
     if (applyState(state)) { writeCache(false); renderAll(); if (saveState !== 'saving') setSaveStatus('saved'); }
@@ -2080,7 +2101,7 @@ window.addEventListener('focus', refreshFromServer);
 // ---------- KEEPING THE PAGE ITSELF CURRENT ----------
 // A phone keeps a Safari tab alive for weeks and restores it without ever asking for the
 // HTML again, so it can sit on a build from last week while syncing today's data quite
-// happily — old tab names, none of the newer layout, and no clue anything is wrong. The
+// happily: old tab names, none of the newer layout, and no clue anything is wrong. The
 // data is live because that's fetched; the page isn't, because it never is. So ask what
 // the current page is, and if it moved, pick it up.
 let pageVersion = null;
@@ -2323,7 +2344,7 @@ function renderGrowthKind() {
   if (input) {
     input.placeholder = quote
       ? 'a quote you like, or one you made up...'
-      : 'an idea — a hobby, a splurge, something to try...';
+      : 'an idea: a hobby, a splurge, something to try...';
     input.focus();
   }
 }
@@ -2335,7 +2356,7 @@ function submitGrowthInput() {
 
 function submitIdeasInput() {
   const input = document.getElementById('growthInput');
-  // Several ideas at once still split on newlines — a quote never does.
+  // Several ideas at once still split on newlines, but a quote never does.
   const lines = (input.value || '').split('\n').map(s => s.trim()).filter(Boolean);
   if (!lines.length) return;
   lines.forEach(text => ideas.unshift({ id: crypto.randomUUID(), text, done: false }));
@@ -2524,7 +2545,7 @@ function saveQuoteEdits() {
   if (!quote) return;
   QUOTE_FIELDS.forEach(([key, elId]) => {
     const val = document.getElementById(elId).value;
-    // The words themselves can't be emptied away — deleting a quote is the × on the card.
+    // The words themselves can't be emptied away: deleting a quote is the × on the card.
     if (key === 'text') { if (val.trim()) quote.text = val.trim(); return; }
     if (val.trim()) quote[key] = val.trim();
     else delete quote[key];
@@ -2629,7 +2650,7 @@ function openSubPop(id) {
   flipOpen(pop, card, row, '.sub-input');
 }
 
-// Flies a card out from its row and back again — shared by the subtask and idea pop-outs.
+// Flies a card out from its row and back again, shared by the subtask and idea pop-outs.
 function flipOpen(pop, card, fromEl, focusSelector) {
   const startRect = fromEl ? fromEl.getBoundingClientRect() : null;
   card.style.transition = 'none';
@@ -2790,7 +2811,7 @@ const TOUCH_HOLD_MS = 320;
 const TOUCH_SLOP = 10;
 
 // Once a held row has picked up, the page has to stop scrolling under it. touch-action
-// can't be changed part-way through a gesture, so the move gets cancelled by hand — and
+// can't be changed part-way through a gesture, so the move gets cancelled by hand, and
 // that needs a non-passive listener. It goes on only for the length of the drag: leaving
 // one on every row would make the browser check with us before every scroll frame.
 function blockTouchScroll(e) { if (e.cancelable) e.preventDefault(); }
@@ -2809,8 +2830,8 @@ function bringDropTargetsIntoView() {
   window.scrollBy({ top: top - 8 });
 }
 
-// While a row is being dragged the page can't scroll itself — on touch it is explicitly
-// held still — so holding near an edge scrolls instead. Without it you could only ever
+// While a row is being dragged the page can't scroll itself, and on touch it is explicitly
+// held still, so holding near an edge scrolls instead. Without it you could only ever
 // move a task as far as one screen, which on a phone is two or three rows.
 const DRAG_EDGE = 76;        // how close to the edge starts it
 const DRAG_EDGE_SPEED = 16;  // px per frame at full tilt
@@ -2856,6 +2877,12 @@ function attachDrag(li, opts = {}) {
     dragging = true;
     li.classList.add('dragging');
     document.body.classList.add('dragging-item');
+    // Turning selection off stops a new one forming, but anything already highlighted
+    // when the row picks up would stay lit for the whole drag.
+    try {
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed) sel.removeAllRanges();
+    } catch (err) {}
     clone = li.cloneNode(true);
     // The row it was cloned from is faded to show where it came from; the thing under
     // the finger should be solid.
@@ -2987,7 +3014,7 @@ function attachDrag(li, opts = {}) {
     if (!dragging) {
       // Pointer capture retargets the click to the li, so a plain tap is handled here.
       // pointercancel means the browser took the gesture over to scroll the page, which
-      // is never a tap — counting it was popping a card open on every scroll.
+      // is never a tap, and counting it was popping a card open on every scroll.
       const moved = Math.abs(e.clientX - startX) > THRESHOLD || Math.abs(e.clientY - startY) > THRESHOLD;
       if (wasDown && !wasArmed && !moved && e.type === 'pointerup' && typeof opts.onTap === 'function') opts.onTap();
       return;
@@ -3275,7 +3302,7 @@ function buildMetricsDetail(items) {
     const heading = document.createElement('div');
     heading.className = 'grp';
     const catDone = catItems.filter(i => i.done).length;
-    heading.textContent = `${label} — ${catDone}/${catItems.length} done`;
+    heading.textContent = `${label}: ${catDone}/${catItems.length} done`;
     wrap.appendChild(heading);
 
     // done first, then not-done
@@ -3450,7 +3477,7 @@ function saveStickerPlacements() {
 }
 
 // A fresh board starts bare. Opening this for the first time and finding thirty-one
-// stickers you didn't put there is somebody else's room, not an empty page — and the
+// stickers you didn't put there is somebody else's room, not an empty page, and the
 // tray is right there on the stickers tab when you want them.
 function seedStickerPlacements() {
   let legacy = {};
@@ -3607,7 +3634,7 @@ function attachStickerRotate(el, spin, badge, p) {
   spin.addEventListener('dblclick', (e) => e.stopPropagation());
 }
 
-// A sticker with no tab of its own shows on all of them — which is every sticker placed
+// A sticker with no tab of its own shows on all of them, which is every sticker placed
 // before this existed, and every one freshly dragged out of the tray. Moving one while a
 // particular tab is open is what pins it there. The stickers tab shows the lot, so
 // anything pinned elsewhere can still be found and rearranged.
@@ -3629,7 +3656,7 @@ function renderPlacedStickers() {
   stickerPlacements.filter(stickerBelongsHere).forEach(p => {
     const el = document.createElement('div');
     el.className = 'sticker';
-    el.title = p.name.replace(/-/g, ' ') + ' — corner arrows resize and rotate · scroll to resize · double-click to remove' + stickerTabNote(p);
+    el.title = p.name.replace(/-/g, ' ') + ': corner arrows resize and rotate · scroll to resize · double-click to remove' + stickerTabNote(p);
     el.style.setProperty('--rot', p.rot);
     el.style.setProperty('--size', p.size + 'px');
     el.style.left = Math.round(window.innerWidth / 2 + p.dx) + 'px';
@@ -3899,7 +3926,7 @@ let extraPins = [];
 
 function saveExtraPins() {
   try { localStorage.setItem(nsKey(EXTRA_PINS_KEY), JSON.stringify(extraPins)); }
-  catch (e) { alert("couldn't save that photo — the browser's storage for this site is full."); }
+  catch (e) { alert("couldn't save that photo, the browser's storage for this site is full."); }
 }
 
 function loadExtraPins() {
@@ -3992,7 +4019,7 @@ function hiddenPins() {
 }
 
 // The eight built-in photos live in the HTML, so "deleting" one hides it.
-// Reversible on purpose — "restore photos" brings them all back.
+// Reversible on purpose: "restore photos" brings them all back.
 function hidePin(pinId) {
   const set = hiddenPins();
   set.add(pinId);

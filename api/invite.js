@@ -38,7 +38,7 @@ export default async function handler(req, res) {
       }
       const invites = await getInvites();
       if (invites.filter((i) => !i.usedAt && !i.revokedAt).length >= MAX_OPEN) {
-        res.status(409).json({ error: 'there are a lot of unused invitations already — revoke some first' });
+        res.status(409).json({ error: 'there are a lot of unused invitations already, revoke some first' });
         return;
       }
       const code = newInviteCode();

@@ -55,7 +55,7 @@ export default async function handler(req, res) {
         return;
       }
       if (await findUser(email)) {
-        res.status(409).json({ error: 'there is already an account with that email — sign in instead' });
+        res.status(409).json({ error: 'there is already an account with that email, sign in instead' });
         return;
       }
       const user = await createUser(email, password);
