@@ -1,7 +1,14 @@
-import { authorize, accountFor, getState, putState, getInbox, putInbox, newId, readBody } from './_lib.js';
+import {
+  authorize, accountFor, getState, putState, getInbox, putInbox, newId, readBody,
+  mayOpen, workOnly, mergeGuestWrite,
+} from './_lib.js';
 
-// GET  /api/sync  -> drains the agent inbox into the day map, returns the whole state
-// PUT  /api/sync  -> replaces stored state with the posted { days, backlog, ideas, quotes }
+// GET  /api/sync[?uid=]  -> drains the agent inbox into the day map, returns the whole state
+// PUT  /api/sync[?uid=]  -> replaces stored state with the posted { days, backlog, ideas, quotes }
+//
+// `uid` opens somebody else's board, and only one they handed over. A guest sees and
+// writes the work half of it and nothing else; the filtering lives here rather than in
+// the page, so a borrowed token can't reach past it either.
 
 function storedIdeas(state) {
   if (Array.isArray(state && state.ideas)) return state.ideas;
@@ -17,7 +24,15 @@ export default async function handler(req, res) {
     res.status(401).json({ error: 'unauthorized' });
     return;
   }
-  const uid = auth.userId;
+
+  const asked = (req.query && (req.query.uid || req.query.u)) || '';
+  const uid = asked ? String(asked) : auth.userId;
+  const guest = uid !== auth.userId;
+  if (guest && !(await mayOpen(auth, uid))) {
+    // Same answer whether the board doesn't exist or simply wasn't shared.
+    res.status(403).json({ error: 'that board has not been shared with you' });
+    return;
+  }
 
   try {
     if (req.method === 'GET') {
@@ -41,6 +56,11 @@ export default async function handler(req, res) {
         await putInbox(uid, []);
       }
 
+      if (guest) {
+        res.status(200).json({ ...workOnly(state), account: accountFor(auth), board: { uid, guest: true } });
+        return;
+      }
+
       res.status(200).json({
         days: state.days || {},
         backlog: state.backlog || [],
@@ -50,12 +70,23 @@ export default async function handler(req, res) {
         // Who this token belongs to: the app shows it, and uses it to tell whose
         // board it is looking at.
         account: accountFor(auth),
+        board: { uid, guest: false },
       });
       return;
     }
 
     if (req.method === 'PUT' || req.method === 'POST') {
       const body = await readBody(req);
+
+      if (guest) {
+        // Fold the guest's work into what the owner has, so their save can never take out
+        // a personal task, an idea or a quote it was never shown.
+        const stored = await getState(uid);
+        await putState(uid, mergeGuestWrite(stored, body));
+        res.status(200).json({ ok: true });
+        return;
+      }
+
       const days = body && typeof body.days === 'object' && body.days ? body.days : {};
       const backlog = Array.isArray(body && body.backlog) ? body.backlog : [];
       // A client running older JS omits the key entirely; keep what's stored rather

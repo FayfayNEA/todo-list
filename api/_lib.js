@@ -220,3 +220,79 @@ export function readBody(req) {
     req.on('error', () => resolve({}));
   });
 }
+
+// ---------- sharing a board ----------
+// One person hands another full run of their day. It is granted by the owner, listed for
+// both of them, and revocable by the owner at any time. Only work carries across: the
+// personal half of a day is never part of what is shared, and that is enforced here
+// rather than by hiding rows in the page, so a shared token cannot read it either.
+const SHARE_INDEX = 'shares/index.json';
+
+export const getShares = () => readJson(SHARE_INDEX, []);
+export const putShares = (v) => writeJson(SHARE_INDEX, v);
+
+const liveShare = (s) => s && !s.revokedAt;
+
+// Whose boards this caller may open, besides their own.
+export async function sharedWithMe(auth) {
+  const email = normalizeEmail(auth.email);
+  if (!email) return [];
+  return (await getShares())
+    .filter((s) => liveShare(s) && normalizeEmail(s.granteeEmail) === email)
+    .map((s) => ({ uid: s.ownerUid, email: s.ownerEmail || null }));
+}
+
+// Who this caller has handed their own board to.
+export async function sharedByMe(auth) {
+  return (await getShares())
+    .filter((s) => liveShare(s) && s.ownerUid === auth.userId)
+    .map((s) => ({ email: s.granteeEmail, createdAt: s.createdAt }));
+}
+
+// The original passphrase carries no email, so it can only ever open its own board:
+// there is no identity on it for a grant to have been made to.
+export async function mayOpen(auth, targetUid) {
+  if (!targetUid || targetUid === auth.userId) return true;
+  return (await sharedWithMe(auth)).some((s) => s.uid === targetUid);
+}
+
+const isWork = (item) => !item || item.category !== 'personal';
+
+// What a guest is allowed to see: the work half of the days and the backlog, and none of
+// the ideas or quotes, which are nobody else's business.
+export function workOnly(state) {
+  const days = {};
+  const src = (state && state.days) || {};
+  for (const date of Object.keys(src)) {
+    const kept = (Array.isArray(src[date]) ? src[date] : []).filter(isWork);
+    if (kept.length) days[date] = kept;
+  }
+  return {
+    days,
+    backlog: (Array.isArray(state && state.backlog) ? state.backlog : []).filter(isWork),
+    ideas: [],
+    quotes: [],
+  };
+}
+
+// A guest's save replaces the work they can see and leaves everything else exactly as the
+// owner left it, so editing a shared day can never delete a personal task or a quote.
+export function mergeGuestWrite(stored, incoming) {
+  const days = {};
+  const oldDays = (stored && stored.days) || {};
+  const newDays = (incoming && incoming.days) || {};
+  for (const date of new Set([...Object.keys(oldDays), ...Object.keys(newDays)])) {
+    const personal = (Array.isArray(oldDays[date]) ? oldDays[date] : []).filter((i) => !isWork(i));
+    const work = (Array.isArray(newDays[date]) ? newDays[date] : []).filter(isWork);
+    const merged = [...work, ...personal];
+    if (merged.length) days[date] = merged;
+  }
+  const oldBacklog = Array.isArray(stored && stored.backlog) ? stored.backlog : [];
+  const newBacklog = Array.isArray(incoming && incoming.backlog) ? incoming.backlog : [];
+  return {
+    days,
+    backlog: [...newBacklog.filter(isWork), ...oldBacklog.filter((i) => !isWork(i))],
+    ideas: Array.isArray(stored && stored.ideas) ? stored.ideas : [],
+    quotes: Array.isArray(stored && stored.quotes) ? stored.quotes : [],
+  };
+}

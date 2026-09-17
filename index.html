@@ -829,6 +829,35 @@
   .invite-act:hover { color: var(--text); transform: scale(1.05); }
   .invite-act:active { transform: scale(0.96); }
 
+  .setting-subtitle {
+    font-size: 11px; color: var(--muted); text-transform: lowercase;
+    letter-spacing: 0.04em; margin: 14px 0 2px;
+  }
+  /* Someone else's day, so it reads as borrowed rather than as your own list. */
+  .guest-banner {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin: 0 0 14px; padding: 8px 12px;
+    border: 1px dashed var(--accent); border-radius: 8px;
+    background: var(--highlight);
+    font-size: 11px; color: var(--text);
+    animation: panelIn 0.28s cubic-bezier(.22,.9,.32,1);
+  }
+  /* display:flex above beats the `hidden` attribute, so say it outright. */
+  .guest-banner[hidden] { display: none; }
+  .guest-banner span { flex: 1 1 auto; min-width: 0; word-break: break-word; }
+  /* Their personal half never leaves their account, so there is nothing to show. */
+  body.viewing-shared .section-heading.personal,
+  body.viewing-shared #dayListPersonal,
+  body.viewing-shared #dayEmptyPersonal,
+  body.viewing-shared #completedTogglePersonal,
+  body.viewing-shared #dayListPersonalDone,
+  body.viewing-shared #backlogListPersonal,
+  body.viewing-shared #backlogEmptyPersonal,
+  body.viewing-shared .tab[data-tab="growth"],
+  body.viewing-shared .tab[data-tab="metrics"],
+  body.viewing-shared #newItemCategory,
+  body.viewing-shared #newBacklogCategory { display: none !important; }
+
   .summary-row { display: flex; gap: 8px; margin-bottom: 18px; }
   .summary-box { flex: 1; background: var(--card); border: 1px solid var(--border-light); padding: 12px; text-align: center; border-radius: 8px; }
   .summary-box .num { font-size: 18px; font-weight: 600; color: var(--text); }
@@ -1277,6 +1306,12 @@
     </div>
     <input type="date" class="strip-jump" onchange="jumpToDate(this.value)" title="jump to date">
   </div>
+  <!-- Only up while a borrowed board is open, so it is never ambiguous whose day is
+       being edited. -->
+  <div class="guest-banner" id="guestBanner" hidden>
+    <span id="guestBannerWho"></span>
+    <button class="invite-act" onclick="openMyBoard()">back to mine</button>
+  </div>
 
   <div class="tabs">
     <div class="tab active" data-tab="day" onclick="switchTab('day')">Day</div>
@@ -1398,8 +1433,8 @@
         <button class="tray-reset" id="stickerReset" onclick="resetStickerBoard()">clear the board</button>
       </div>
     </div>
-    <div class="tray-hint tray-hint-block">a sticker shows on every tab until you move it while another tab is open &mdash; then it stays on that one. this tab shows all of them, the faint ones live elsewhere.</div>
-    <div class="mobile-only">on a phone these sit behind the page as decoration &mdash; open it on a computer to arrange them</div>
+    <div class="tray-hint tray-hint-block">a sticker shows on every tab until you move it while another tab is open, and then it stays on that one. this tab shows all of them, the faint ones live elsewhere.</div>
+    <div class="mobile-only">on a phone these sit behind the page as decoration, so open it on a computer to arrange them</div>
     <div class="theme-bar" id="stickerThemes"></div>
     <div class="sticker-tray" id="stickerTray"></div>
   </div>
@@ -1412,6 +1447,24 @@
         <div class="setting-value" id="settingsAccount">signed in on this device</div>
         <button class="tray-reset" onclick="signOut()">log out</button>
       </div>
+    </div>
+
+    <div class="setting-group" id="teamGroup" hidden>
+      <div class="setting-title">team</div>
+      <div class="setting-note">
+        hand someone your day and they can see it and work it with you. only the work half
+        travels: your personal list, your ideas and your quotes stay yours. take it back
+        whenever you like.
+      </div>
+      <div class="setting-row">
+        <input class="quote-who-input" id="shareEmail" type="email" placeholder="their email"
+               autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
+        <button class="tray-reset" id="shareAdd" onclick="addShare()">share my day</button>
+      </div>
+      <div class="setting-note" id="shareMsg" hidden></div>
+      <div id="sharingWithList"></div>
+      <div class="setting-subtitle" id="sharedWithMeTitle" hidden>shared with you</div>
+      <div id="sharedWithMeList"></div>
     </div>
 
     <div class="setting-group" id="inviteGroup" hidden>
@@ -1432,7 +1485,7 @@
     <div class="setting-group">
       <div class="setting-title">agent token</div>
       <div class="setting-note">
-        a script or an agent can post tasks straight into your day with this &mdash; it's the
+        a script or an agent can post tasks straight into your day with this, and it's the
         <code>Authorization</code> header in AGENT_API.md. it only ever reaches this account's
         list, and anyone who has it can write to that list, so keep it to yourself.
       </div>
@@ -1444,7 +1497,7 @@
         <button id="apiTokenCopy" onclick="copyApiToken()">copy</button>
       </div>
       <div class="setting-note" id="apiTokenNone" hidden>
-        not available while signed in with the old shared passphrase &mdash; make an account to get one.
+        not available while signed in with the old shared passphrase, so make an account to get one.
       </div>
     </div>
   </div>
@@ -1477,6 +1530,17 @@ let token = null;
 let account = readAccount();
 let authMode = 'login';
 
+// Whose board is on screen. null is your own; anything else is a board somebody handed
+// you, which shows the work half of their day and nothing else.
+let viewingUid = null;
+let viewingEmail = null;
+let team = { sharingWith: [], sharedWithMe: [] };
+
+function viewingShared() { return !!viewingUid; }
+function syncUrl() {
+  return viewingUid ? '/api/sync?uid=' + encodeURIComponent(viewingUid) : '/api/sync';
+}
+
 function readAccount() {
   try { return JSON.parse(localStorage.getItem(ACCOUNT_KEY)) || null; } catch (e) { return null; }
 }
@@ -1492,7 +1556,7 @@ function writeAccount(a) {
 // carry over untouched; everyone else gets a namespace of their own.
 function ownersView() { return !account || account.isOwner; }
 function nsKey(base) { return ownersView() ? base : base + '::' + account.email; }
-function cacheKey() { return nsKey(CACHE_BASE); }
+function cacheKey() { return nsKey(CACHE_BASE) + (viewingUid ? '::board:' + viewingUid : ''); }
 
 // Someone arriving from an invitation shouldn't have to copy a code out of an email.
 let pendingInvite = null;
@@ -1676,6 +1740,155 @@ function renderAccount() {
   if (none) none.hidden = has;
   if (row && !has) row.hidden = true;
   if (row && !row.hidden) document.getElementById('apiTokenInput').value = account.apiToken;
+}
+
+// ---------- sharing your day ----------
+// A grant only ever points outwards: you name who may open your board. There is no way to
+// ask for a look at someone else's, so an address alone never gets anyone in.
+function setShareMsg(msg, tone) {
+  const el = document.getElementById('shareMsg');
+  if (!el) return;
+  el.hidden = !msg;
+  el.textContent = msg || '';
+  el.className = 'setting-note' + (tone ? ' ' + tone : '');
+}
+
+async function shareFetch(method, body) {
+  const key = getToken();
+  if (!key) return null;
+  const res = await fetch('/api/share', {
+    method,
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  return { ok: res.ok, data };
+}
+
+async function loadTeam() {
+  const group = document.getElementById('teamGroup');
+  if (!group) return;
+  // The old passphrase carries no address, so there is no "you" to share as.
+  group.hidden = !(account && account.email);
+  if (group.hidden) return;
+  try {
+    const out = await shareFetch('GET');
+    if (!out || !out.ok) return;
+    team = { sharingWith: out.data.sharingWith || [], sharedWithMe: out.data.sharedWithMe || [] };
+    renderTeam();
+  } catch (e) {}
+}
+
+function renderTeam() {
+  const mine = document.getElementById('sharingWithList');
+  const theirs = document.getElementById('sharedWithMeList');
+  const title = document.getElementById('sharedWithMeTitle');
+  if (!mine || !theirs) return;
+
+  mine.innerHTML = '';
+  for (const s of team.sharingWith) {
+    const row = document.createElement('div');
+    row.className = 'invite-row';
+    const who = document.createElement('span');
+    who.className = 'invite-for';
+    who.textContent = s.email;
+    const stop = document.createElement('span');
+    stop.className = 'invite-act';
+    stop.textContent = 'stop sharing';
+    stop.onclick = () => removeShare(s.email);
+    row.append(who, stop);
+    mine.appendChild(row);
+  }
+
+  title.hidden = team.sharedWithMe.length === 0;
+  theirs.innerHTML = '';
+  for (const s of team.sharedWithMe) {
+    const row = document.createElement('div');
+    row.className = 'invite-row';
+    const who = document.createElement('span');
+    who.className = 'invite-for';
+    who.textContent = s.email || 'someone';
+    const open = document.createElement('span');
+    open.className = 'invite-act';
+    const here = viewingUid === s.uid;
+    open.textContent = here ? 'you are here' : 'open their day';
+    if (!here) open.onclick = () => openSharedBoard(s.uid, s.email);
+    row.append(who, open);
+    theirs.appendChild(row);
+  }
+}
+
+async function addShare() {
+  const field = document.getElementById('shareEmail');
+  const btn = document.getElementById('shareAdd');
+  const email = (field.value || '').trim();
+  if (!email) { field.focus(); return; }
+  btn.disabled = true;
+  setShareMsg('');
+  try {
+    const out = await shareFetch('POST', { email });
+    if (!out || !out.ok) { setShareMsg((out && out.data.error) || "that didn't work", 'bad'); return; }
+    field.value = '';
+    team.sharingWith = out.data.sharingWith || [];
+    renderTeam();
+    setShareMsg(out.data.pending
+      ? email + ' can see your day as soon as they make an account with that address'
+      : email + ' can see your day now', 'good');
+  } catch (e) {
+    setShareMsg("couldn't reach the server", 'bad');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function removeShare(email) {
+  try {
+    const out = await shareFetch('DELETE', { email });
+    if (!out || !out.ok) { setShareMsg((out && out.data.error) || "that didn't work", 'bad'); return; }
+    team.sharingWith = out.data.sharingWith || [];
+    renderTeam();
+    setShareMsg(email + ' can no longer see your day', 'good');
+  } catch (e) {
+    setShareMsg("couldn't reach the server", 'bad');
+  }
+}
+
+// Switching boards is a whole reload of the list: a pending save belongs to the board it
+// was typed on, so it goes out before anything else moves.
+async function openSharedBoard(uid, email) {
+  if (pushTimer || pushFailed) { clearTimeout(pushTimer); pushTimer = null; await pushState(); }
+  viewingUid = uid;
+  viewingEmail = email || null;
+  applyViewingChrome();
+  await loadAll();
+  renderTeam();
+  switchTab('day');
+}
+
+async function openMyBoard() {
+  if (pushTimer || pushFailed) { clearTimeout(pushTimer); pushTimer = null; await pushState(); }
+  viewingUid = null;
+  viewingEmail = null;
+  applyViewingChrome();
+  await loadAll();
+  renderTeam();
+}
+
+function applyViewingChrome() {
+  document.body.classList.toggle('viewing-shared', viewingShared());
+  const banner = document.getElementById('guestBanner');
+  const who = document.getElementById('guestBannerWho');
+  if (banner) banner.hidden = !viewingShared();
+  if (who && viewingShared()) {
+    who.textContent = (viewingEmail || 'someone') + "'s day. work only, and edits go to their list.";
+  }
+  // Nothing on a borrowed board is filed as personal, and there is no picker to say so.
+  if (viewingShared()) {
+    const day = document.getElementById('newItemCategory');
+    const back = document.getElementById('newBacklogCategory');
+    if (day) day.value = 'work';
+    if (back) back.value = 'work';
+  }
 }
 
 // ---------- inviting people ----------
@@ -1931,7 +2144,7 @@ async function pushState() {
   if (!key) { setSaveStatus('offline'); showAuthGate(''); return; }
   pushInFlight = true;
   try {
-    const res = await fetch('/api/sync', {
+    const res = await fetch(syncUrl(), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
       body: JSON.stringify({ days: daysMap, backlog, ideas, quotes })
@@ -2024,7 +2237,7 @@ async function loadAll() {
   }
 
   try {
-    const res = await fetch('/api/sync', { headers: { 'Authorization': 'Bearer ' + key } });
+    const res = await fetch(syncUrl(), { headers: { 'Authorization': 'Bearer ' + key } });
     if (res.status === 401) {
       clearToken();
       account = null;
@@ -2034,6 +2247,16 @@ async function loadAll() {
       renderAll();
       renderAccount();
       showAuthGate('that session has expired, sign in again.', true);
+      return;
+    }
+    // The owner took the share back while it was open. Drop the copy of their day this
+    // browser is holding and go home rather than sitting on a board with no way to save.
+    if (res.status === 403 && viewingShared()) {
+      try { localStorage.removeItem(cacheKey()); } catch (e) {}
+      viewingUid = null; viewingEmail = null;
+      applyViewingChrome();
+      await loadAll();
+      loadTeam();
       return;
     }
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -2086,7 +2309,7 @@ async function refreshFromServer() {
   if (pushFailed) { pushState(); return; }
   const editsAtStart = localEdits;
   try {
-    const res = await fetch('/api/sync', { headers: { 'Authorization': 'Bearer ' + key } });
+    const res = await fetch(syncUrl(), { headers: { 'Authorization': 'Bearer ' + key } });
     if (!res.ok) return;
     const state = await res.json();
     // Something was typed while that request was in the air, so keep the local copy.
@@ -2174,7 +2397,7 @@ function switchTab(tab) {
   if (tab === 'growth') { renderIdeas(); renderQuotes(); }
   if (tab === 'stickers') renderStickerTray();
   if (tab === 'backlog') { renderDateStrip(); renderBacklog(); }
-  if (tab === 'settings') { renderAccount(); loadInvites(); }
+  if (tab === 'settings') { renderAccount(); loadInvites(); loadTeam(); }
   renderPlacedStickers();          // each tab keeps its own stickers
   // On a phone you're usually deep in a long list when you switch tabs; land at the
   // top of the new one rather than in the middle of it.
