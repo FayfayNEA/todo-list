@@ -1,14 +1,15 @@
 import {
   authorize, accountFor, getState, putState, getInbox, putInbox, newId, readBody,
-  mayOpen, workOnly, mergeGuestWrite,
+  mayOpen, workOnly,
 } from './_lib.js';
 
 // GET  /api/sync[?uid=]  -> drains the agent inbox into the day map, returns the whole state
 // PUT  /api/sync[?uid=]  -> replaces stored state with the posted { days, backlog, ideas, quotes }
 //
-// `uid` opens somebody else's board, and only one they handed over. A guest sees and
-// writes the work half of it and nothing else; the filtering lives here rather than in
-// the page, so a borrowed token can't reach past it either.
+// `uid` opens somebody else's board, and only one they handed over. A guest reads the
+// work half of it and nothing else, and cannot write to it at all: what they can do is
+// leave a note on it, which is /api/comments. The filtering lives here rather than in the
+// page, so a borrowed token can't reach past it either.
 
 function storedIdeas(state) {
   if (Array.isArray(state && state.ideas)) return state.ideas;
@@ -76,17 +77,14 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'PUT' || req.method === 'POST') {
-      const body = await readBody(req);
-
       if (guest) {
-        // Fold the guest's work into what the owner has, so their save can never take out
-        // a personal task, an idea or a quote it was never shown.
-        const stored = await getState(uid);
-        await putState(uid, mergeGuestWrite(stored, body));
-        res.status(200).json({ ok: true });
+        // Only the owner rearranges their own day. A guest who wants something moved says
+        // so in a comment.
+        res.status(403).json({ error: 'this board is read-only, leave a note instead' });
         return;
       }
 
+      const body = await readBody(req);
       const days = body && typeof body.days === 'object' && body.days ? body.days : {};
       const backlog = Array.isArray(body && body.backlog) ? body.backlog : [];
       // A client running older JS omits the key entirely; keep what's stored rather
