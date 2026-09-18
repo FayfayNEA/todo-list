@@ -275,24 +275,15 @@ export function workOnly(state) {
   };
 }
 
-// A guest's save replaces the work they can see and leaves everything else exactly as the
-// owner left it, so editing a shared day can never delete a personal task or a quote.
-export function mergeGuestWrite(stored, incoming) {
-  const days = {};
-  const oldDays = (stored && stored.days) || {};
-  const newDays = (incoming && incoming.days) || {};
-  for (const date of new Set([...Object.keys(oldDays), ...Object.keys(newDays)])) {
-    const personal = (Array.isArray(oldDays[date]) ? oldDays[date] : []).filter((i) => !isWork(i));
-    const work = (Array.isArray(newDays[date]) ? newDays[date] : []).filter(isWork);
-    const merged = [...work, ...personal];
-    if (merged.length) days[date] = merged;
-  }
-  const oldBacklog = Array.isArray(stored && stored.backlog) ? stored.backlog : [];
-  const newBacklog = Array.isArray(incoming && incoming.backlog) ? incoming.backlog : [];
-  return {
-    days,
-    backlog: [...newBacklog.filter(isWork), ...oldBacklog.filter((i) => !isWork(i))],
-    ideas: Array.isArray(stored && stored.ideas) ? stored.ideas : [],
-    quotes: Array.isArray(stored && stored.quotes) ? stored.quotes : [],
-  };
+// ---------- suggestions on a shared day ----------
+// A guest reads the day and says what they would change; the owner is the only one who
+// can actually move anything. Kept beside the board rather than inside it, so a save of
+// the checklist and a note about it never race each other.
+const commentsPath = (uid) => (uid === OWNER_UID ? 'comments.json' : `u/${uid}/comments.json`);
+
+export const getComments = (uid) => readJson(commentsPath(uid), []);
+export const putComments = (uid, v) => writeJson(commentsPath(uid), v);
+
+export function newCommentId() {
+  return 'c-' + Date.now().toString(36) + '-' + crypto.randomBytes(3).toString('hex');
 }

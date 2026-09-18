@@ -698,6 +698,8 @@
 
   .drag-clone { position: fixed; pointer-events: none; z-index: 1000; opacity: 0.92; box-shadow: 0 6px 16px rgba(0,0,0,0.2); border-radius: 8px; }
 
+  /* Sits under the steps in the opened card, with a rule to separate it from them. */
+  .sub-move { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-light); flex-wrap: wrap; }
   .schedule-row { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
   .schedule-row input[type=date] { font-size: 11px; padding: 5px 6px; border: 1px solid var(--border); font-family: inherit; background: var(--bg); border-radius: 8px; }
   .schedule-row button {
@@ -856,7 +858,40 @@
   body.viewing-shared .tab[data-tab="growth"],
   body.viewing-shared .tab[data-tab="metrics"],
   body.viewing-shared #newItemCategory,
-  body.viewing-shared #newBacklogCategory { display: none !important; }
+  body.viewing-shared #newBacklogCategory,
+  /* Read-only: there is nothing here to add, tick off, or throw away. */
+  body.viewing-shared .add-box,
+  body.viewing-shared .add-row-outside,
+  body.viewing-shared .remove,
+  body.viewing-shared .sub-remove,
+  body.viewing-shared .sub-add,
+  body.viewing-shared .completed-toggle,
+  body.viewing-shared .drag-hint { display: none !important; }
+  body.viewing-shared .checkbox { pointer-events: none; opacity: 0.75; }
+  body.viewing-shared li.task-item { cursor: default; }
+
+  #dayNotes { margin-top: 22px; }
+  .note-row {
+    display: flex; gap: 8px; align-items: flex-start;
+    padding: 9px 0; border-top: 1px solid var(--border-light);
+    font-size: 12px; color: var(--text);
+    animation: taskIn 0.28s cubic-bezier(.22,.9,.32,1);
+  }
+  .note-body { flex: 1 1 auto; min-width: 0; }
+  .note-text { word-break: break-word; white-space: pre-wrap; }
+  .note-who { font-size: 10px; color: var(--muted); margin-top: 3px; letter-spacing: 0.04em; }
+  .note-on {
+    font-size: 10px; color: var(--accent); margin-top: 3px;
+    letter-spacing: 0.04em; word-break: break-word;
+  }
+  .note-add { display: flex; gap: 8px; align-items: flex-end; margin-top: 10px; }
+  .note-add[hidden] { display: none; }
+  .note-add textarea {
+    flex: 1 1 auto; font-family: inherit; font-size: 12px; padding: 8px 10px;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
+    color: var(--text); resize: vertical;
+  }
+  .note-add textarea:focus { outline: none; border-color: var(--accent); }
 
   .summary-row { display: flex; gap: 8px; margin-bottom: 18px; }
   .summary-box { flex: 1; background: var(--card); border: 1px solid var(--border-light); padding: 12px; text-align: center; border-radius: 8px; }
@@ -1368,6 +1403,18 @@
     <div class="empty" id="dayEmptyPersonal" data-reorder="personal" style="display:none;">nothing here</div>
     <div class="completed-toggle" id="completedTogglePersonal" style="display:none;" onclick="toggleCompleted('personal')"></div>
     <ul id="dayListPersonalDone" style="display:none;"></ul>
+
+    <!-- What other people would change about this day. Suggestions sitting beside the
+         list, never edits to it. -->
+    <div id="dayNotes" hidden>
+      <div class="section-heading" id="dayNotesTitle">notes</div>
+      <div id="notesList"></div>
+      <div class="note-add" id="noteAdd" hidden>
+        <textarea id="noteInput" rows="2" placeholder="suggest a change to this day..."></textarea>
+        <button class="tray-reset" onclick="submitNote()">leave note</button>
+      </div>
+      <div class="setting-note" id="noteMsg" hidden></div>
+    </div>
   </div>
 
   <!-- BACKLOG VIEW -->
@@ -1452,9 +1499,10 @@
     <div class="setting-group" id="teamGroup" hidden>
       <div class="setting-title">team</div>
       <div class="setting-note">
-        hand someone your day and they can see it and work it with you. only the work half
-        travels: your personal list, your ideas and your quotes stay yours. take it back
-        whenever you like.
+        hand someone your day and they can read it and leave notes on it, like what to do
+        first or what to push to tomorrow. they can't change anything: moving it is still
+        yours alone. only the work half travels, so your personal list, your ideas and your
+        quotes stay yours. take it back whenever you like.
       </div>
       <div class="setting-row">
         <input class="quote-who-input" id="shareEmail" type="email" placeholder="their email"
@@ -1859,6 +1907,7 @@ async function openSharedBoard(uid, email) {
   if (pushTimer || pushFailed) { clearTimeout(pushTimer); pushTimer = null; await pushState(); }
   viewingUid = uid;
   viewingEmail = email || null;
+  notes = []; notesKey = null;
   applyViewingChrome();
   await loadAll();
   renderTeam();
@@ -1869,6 +1918,7 @@ async function openMyBoard() {
   if (pushTimer || pushFailed) { clearTimeout(pushTimer); pushTimer = null; await pushState(); }
   viewingUid = null;
   viewingEmail = null;
+  notes = []; notesKey = null;
   applyViewingChrome();
   await loadAll();
   renderTeam();
@@ -1880,7 +1930,7 @@ function applyViewingChrome() {
   const who = document.getElementById('guestBannerWho');
   if (banner) banner.hidden = !viewingShared();
   if (who && viewingShared()) {
-    who.textContent = (viewingEmail || 'someone') + "'s day. work only, and edits go to their list.";
+    who.textContent = (viewingEmail || 'someone') + "'s day, to read. work only, and you can leave notes on it.";
   }
   // Nothing on a borrowed board is filed as personal, and there is no picker to say so.
   if (viewingShared()) {
@@ -1888,6 +1938,146 @@ function applyViewingChrome() {
     const back = document.getElementById('newBacklogCategory');
     if (day) day.value = 'work';
     if (back) back.value = 'work';
+  }
+}
+
+// ---------- notes on a day ----------
+// Someone reading your day can say what they would move; you are the only one who can
+// move it. Fetched per board and per day, and only when that pair changes, so scrolling
+// through the week doesn't hammer the endpoint.
+let notes = [];
+let notesKey = null;
+let notesInFlight = false;
+
+function setNoteMsg(msg, tone) {
+  const el = document.getElementById('noteMsg');
+  if (!el) return;
+  el.hidden = !msg;
+  el.textContent = msg || '';
+  el.className = 'setting-note' + (tone ? ' ' + tone : '');
+}
+
+async function noteFetch(method, body, dateStr) {
+  const key = getToken();
+  if (!key) return null;
+  const params = [];
+  if (viewingUid) params.push('uid=' + encodeURIComponent(viewingUid));
+  if (dateStr) params.push('date=' + encodeURIComponent(dateStr));
+  const url = '/api/comments' + (params.length ? '?' + params.join('&') : '');
+  const res = await fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, data };
+}
+
+async function loadNotes(force) {
+  const key = (viewingUid || 'mine') + '|' + currentDate;
+  if (!force && key === notesKey) { renderNotes(); return; }
+  if (notesInFlight) return;
+  notesKey = key;
+  if (!getToken()) { notes = []; renderNotes(); return; }
+  notesInFlight = true;
+  try {
+    const out = await noteFetch('GET', null, currentDate);
+    if (out && out.ok) notes = out.data.comments || [];
+    // Only redraw if the day hasn't moved on under us.
+    if (key === (viewingUid || 'mine') + '|' + currentDate) renderNotes();
+  } catch (e) {} finally { notesInFlight = false; }
+}
+
+function renderNotes() {
+  const wrap = document.getElementById('dayNotes');
+  const list = document.getElementById('notesList');
+  const add = document.getElementById('noteAdd');
+  const title = document.getElementById('dayNotesTitle');
+  if (!wrap || !list) return;
+
+  const guest = viewingShared();
+  // On your own day the section is only worth the space once somebody has said something.
+  wrap.hidden = !guest && notes.length === 0;
+  add.hidden = !guest;
+  title.textContent = guest ? 'notes' : 'notes from others';
+
+  list.innerHTML = '';
+  for (const note of notes) {
+    const row = document.createElement('div');
+    row.className = 'note-row';
+
+    const body = document.createElement('div');
+    body.className = 'note-body';
+
+    const text = document.createElement('div');
+    text.className = 'note-text';
+    text.textContent = note.text;
+    body.appendChild(text);
+
+    // A note can be about one task rather than the day; say which, by its title.
+    if (note.taskId) {
+      const on = document.createElement('div');
+      const task = (daysMap[currentDate] || []).find(t => t.id === note.taskId);
+      on.className = 'note-on';
+      on.textContent = task ? 'about: ' + task.text : 'about a task that has since gone';
+      body.appendChild(on);
+    }
+
+    const who = document.createElement('div');
+    who.className = 'note-who';
+    who.textContent = note.author + ' · ' + shortWhen(note.createdAt);
+    body.appendChild(who);
+
+    row.appendChild(body);
+
+    // Yours to clear on your own board; otherwise only your own words.
+    const mine = !guest || (account && note.author === account.email);
+    if (mine) {
+      const del = document.createElement('button');
+      del.className = 'remove';
+      del.textContent = '×';
+      del.title = guest ? 'withdraw this note' : 'clear this note';
+      del.onclick = () => deleteNote(note.id);
+      row.appendChild(del);
+    }
+    list.appendChild(row);
+  }
+}
+
+function shortWhen(iso) {
+  const then = new Date(iso);
+  if (isNaN(then)) return '';
+  const mins = Math.floor((Date.now() - then.getTime()) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + 'm ago';
+  if (mins < 60 * 24) return Math.floor(mins / 60) + 'h ago';
+  return then.toISOString().slice(0, 10);
+}
+
+async function submitNote() {
+  const input = document.getElementById('noteInput');
+  const text = (input.value || '').trim();
+  if (!text) { input.focus(); return; }
+  setNoteMsg('');
+  try {
+    const out = await noteFetch('POST', { date: currentDate, text });
+    if (!out || !out.ok) { setNoteMsg((out && out.data.error) || "that didn't send", 'bad'); return; }
+    input.value = '';
+    notes.push(out.data.comment);
+    renderNotes();
+  } catch (e) {
+    setNoteMsg("couldn't reach the server", 'bad');
+  }
+}
+
+async function deleteNote(id) {
+  try {
+    const out = await noteFetch('DELETE', { id });
+    if (!out || !out.ok) { setNoteMsg((out && out.data.error) || "that didn't work", 'bad'); return; }
+    notes = notes.filter(n => n.id !== id);
+    renderNotes();
+  } catch (e) {
+    setNoteMsg("couldn't reach the server", 'bad');
   }
 }
 
@@ -2123,6 +2313,9 @@ function saveDays() { queuePush(); }
 function saveBacklog() { queuePush(); }
 
 function queuePush() {
+  // A borrowed board is read-only. The endpoint refuses the write anyway; stopping here
+  // keeps the page from showing "couldn't save" for something it should never have sent.
+  if (viewingShared()) return;
   localEdits++;
   writeCache(true);
   setSaveStatus('saving');
@@ -2989,6 +3182,35 @@ function buildSubPanel(item) {
     setTimeout(() => input.focus(), 0);
   }
 
+  // Where the card goes next. Dragging a row onto a day or the backlog tab already does
+  // this, but that only reaches the few days in the strip and needs a steady hand, so the
+  // opened card says it outright. Backlog items have nowhere to be sent, and a borrowed
+  // board is not yours to rearrange.
+  const inDay = (daysMap[currentDate] || []).some(i => i.id === item.id);
+  if (inDay && !viewingShared()) {
+    const move = document.createElement('div');
+    move.className = 'schedule-row sub-move';
+
+    const when = document.createElement('input');
+    when.type = 'date';
+    when.value = currentDate;
+
+    const go = document.createElement('button');
+    go.textContent = 'move to this day';
+    go.onclick = () => {
+      if (!when.value || when.value === currentDate) return;
+      closeSubPop();
+      moveDayItem(item.id, when.value);
+    };
+
+    const out = document.createElement('button');
+    out.textContent = 'send to backlog';
+    out.onclick = () => { closeSubPop(); moveToBacklog(item.id); };
+
+    move.append(when, go, out);
+    panel.appendChild(move);
+  }
+
   return panel;
 }
 
@@ -3076,6 +3298,8 @@ function attachDrag(li, opts = {}) {
   }
 
   li.addEventListener('pointerdown', (e) => {
+    // Somebody else's day is not yours to reorder; tapping to read it still works.
+    if (viewingShared()) return;
     if (e.target.closest('.checkbox') || e.target.closest('.remove') || e.target.closest('.schedule-row')) return;
     down = true;
     armed = false;
@@ -3327,11 +3551,13 @@ function removeDayItem(id) {
   saveDays();
   renderDay();
 }
+// Carry the whole task across, not a fresh copy of its title: rebuilding it with mk()
+// quietly dropped the steps underneath it and whether it was already done.
 function moveToBacklog(id) {
   const item = (daysMap[currentDate] || []).find(i => i.id === id);
   if (!item) return;
   daysMap[currentDate] = daysMap[currentDate].filter(i => i.id !== id);
-  backlog.push(mk(item.text, item.category));
+  backlog.push(item);
   saveDays();
   saveBacklog();
   renderDay();
@@ -3343,7 +3569,7 @@ function moveDayItem(id, targetDateStr) {
   if (!item) return;
   daysMap[currentDate] = daysMap[currentDate].filter(i => i.id !== id);
   ensureDay(targetDateStr);
-  daysMap[targetDateStr].push(mk(item.text, item.category));
+  daysMap[targetDateStr].push(item);
   saveDays();
   renderDateStrip();
   renderDay();
@@ -3378,6 +3604,7 @@ REFLECT_FIELDS.forEach(([, elId]) => {
 });
 
 function renderDay() {
+  loadNotes();
   ensureDay(currentDate);
   const items = daysMap[currentDate];
 
