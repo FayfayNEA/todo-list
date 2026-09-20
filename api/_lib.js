@@ -287,3 +287,14 @@ export const putComments = (uid, v) => writeJson(commentsPath(uid), v);
 export function newCommentId() {
   return 'c-' + Date.now().toString(36) + '-' + crypto.randomBytes(3).toString('hex');
 }
+
+// ---------- the workday ----------
+// Everything the planner needs that isn't the task list itself: when this person works,
+// how much authority they've handed over, what the calendar says, what the day keeps
+// teaching, and whether the experiment is paying off. Kept beside the board rather than
+// inside it so the checklist stays exactly the shape it has always been, and a person who
+// never turns any of this on is carrying none of it.
+const workdayPath = (uid) => (uid === OWNER_UID ? 'workday.json' : `u/${uid}/workday.json`);
+
+export const getWorkday = (uid) => readJson(workdayPath(uid), null);
+export const putWorkday = (uid, v) => writeJson(workdayPath(uid), v);
