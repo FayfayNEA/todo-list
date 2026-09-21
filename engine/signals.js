@@ -10,6 +10,8 @@
 // not have to change to accept it, and so the shape of that future is argued about now
 // while it is cheap.
 
+import { clamp } from './model.js';
+
 export const SIGNAL_KINDS = [
   'sleep',        // last night's duration and quality
   'energy',       // self-reported or inferred
@@ -57,8 +59,4 @@ export function applySignals(signals, ctx = {}) {
   out.minDeepBlock = clamp(out.minDeepBlock, 0, 180);
   out.ctx = ctx;
   return out;
-}
-
-function clamp(n, lo, hi) {
-  return Math.min(Math.max(Number.isFinite(n) ? n : lo, lo), hi);
 }

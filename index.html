@@ -3514,6 +3514,10 @@ function moveWithinList(list, id, drop) {
 
 function reorderDayItem(id, drop) {
   if (!moveWithinList(daysMap[currentDate] || [], id, drop)) return;
+  // Putting a row somewhere by hand outranks whatever the planner would have chosen, and
+  // keeps outranking it, or the next render would simply undo the drag.
+  const moved = (daysMap[currentDate] || []).find(i => i.id === id);
+  if (moved) moved.handPlaced = true;
   saveDays();
   renderDay();
 }
@@ -3603,6 +3607,72 @@ REFLECT_FIELDS.forEach(([, elId]) => {
   document.getElementById(elId).addEventListener('input', saveIdeaReflection);
 });
 
+// ---------- THE DAY ORDERS ITSELF ----------
+// The list looks exactly as it always has. What changed is that its order is no longer
+// the order things were typed in: the planner in /engine works out what the day should
+// be, and the rows come back in that sequence.
+//
+// Three things keep this from being annoying rather than useful:
+//
+//   - Anything dragged by hand is pinned where it was put and stays there. Deciding the
+//     order is a service; overruling it has to be final, or it isn't.
+//   - Nothing is ever hidden. Work the planner would push to another day sinks to the
+//     bottom of its section rather than disappearing, because quietly removing a task
+//     from view is the one thing a checklist must never do.
+//   - If the engine fails to load, or throws, the list renders in the order it always
+//     did. The ordering is an improvement on the list, not a dependency of it.
+let engine = null;
+window.__engineReady = (mod) => { engine = mod; renderDay(); };
+
+function planOrder(items) {
+  if (!engine || !items.length) return items;
+  try {
+    const pinned = new Map();
+    items.forEach((it, i) => { if (it.handPlaced) pinned.set(it.id, i); });
+
+    const plan = engine.planDay({
+      date: currentDate,
+      profile: workdayProfile(),
+      tasks: items.map((it) => ({
+        id: it.id, text: it.text, done: it.done, category: it.category,
+        kind: it.kind, estimateMin: it.estimateMin, priority: it.priority,
+        deadline: it.deadline, blockedBy: it.blockedBy,
+      })),
+    });
+
+    const rank = new Map();
+    plan.blocks.filter((b) => b.type === 'task').forEach((b, i) => rank.set(b.taskId, i));
+    const sunk = plan.blocks.length;
+    plan.deferred.forEach((d, i) => rank.set(d.taskId, sunk + i));
+    plan.blocked.forEach((b, i) => rank.set(b.taskId, sunk + 500 + i));
+
+    const ordered = items
+      .map((it, i) => ({ it, i, r: rank.has(it.id) ? rank.get(it.id) : sunk + 1000 + i }))
+      .sort((a, b) => a.r - b.r || a.i - b.i)
+      .map((x) => x.it);
+
+    // Put the hand-placed rows back at the index they were dropped on.
+    if (pinned.size) {
+      const rest = ordered.filter((it) => !pinned.has(it.id));
+      const out = [];
+      for (let i = 0; i < items.length; i++) {
+        const held = [...pinned.entries()].find(([, idx]) => idx === i);
+        out.push(held ? items.find((it) => it.id === held[0]) : rest.shift());
+      }
+      return out.filter(Boolean).concat(rest);
+    }
+    return ordered;
+  } catch (e) {
+    console.warn('planner unavailable, keeping the list as it is', e);
+    return items;
+  }
+}
+
+// Until there is somewhere to say otherwise, these are the hours the planner assumes.
+function workdayProfile() {
+  return { startsAt: '09:00', endsAt: '17:30', deepWorkWindows: [{ start: '09:00', end: '12:30' }], lunch: null };
+}
+
 function renderDay() {
   loadNotes();
   ensureDay(currentDate);
@@ -3619,7 +3689,7 @@ function renderDay() {
     doneList.innerHTML = '';
 
     const catItems = items.filter(i => (category === 'work' ? i.category !== 'personal' : i.category === 'personal'));
-    const undone = catItems.filter(i => !i.done || i.id === animatingId);
+    const undone = planOrder(catItems.filter(i => !i.done || i.id === animatingId));
     const done = catItems.filter(i => i.done && i.id !== animatingId);
 
     emptyEl.style.display = undone.length === 0 ? 'block' : 'none';
@@ -4756,6 +4826,17 @@ renderAccount();
 loadAll();
 // Record which build this tab is running, so a later check can tell it has fallen behind.
 checkPageVersion();
+</script>
+<!-- The planner is a real module served from /engine, so the page uses the same code the
+     server does rather than a copy of it that can drift. It loads after this script and
+     re-renders on arrival; if it never arrives the list keeps the order it always had. -->
+<script type="module">
+  try {
+    const mod = await import('/engine/index.js');
+    window.__engineReady && window.__engineReady(mod);
+  } catch (e) {
+    console.warn('planner did not load; the list is in its plain order', e);
+  }
 </script>
 </body>
 </html>
