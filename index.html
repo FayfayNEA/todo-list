@@ -1220,9 +1220,15 @@
     <input type="text" id="authInvite" autocomplete="off" autocapitalize="none"
            autocorrect="off" spellcheck="false"
            placeholder="invite code" hidden onkeydown="if(event.key==='Enter')submitAuth()">
+    <input type="password" id="authKey" autocomplete="current-password"
+           placeholder="passphrase" hidden onkeydown="if(event.key==='Enter')submitAuth()">
     <div class="err" id="authGateMsg"></div>
     <button id="authSubmit" onclick="submitAuth()">sign in</button>
     <div class="auth-switch" id="authSwitch" onclick="toggleAuthMode()">no account yet? make one</div>
+    <!-- The way in that existed before accounts did. A browser that was already signed in
+         kept working off a stored token, so this only looked unnecessary until someone
+         opened the checklist on a second device and found no door. -->
+    <div class="auth-switch" id="authLegacySwitch" onclick="toggleLegacyMode()">use the old passphrase instead</div>
   </div>
 </div>
 <div class="moodboard">
@@ -1681,24 +1687,77 @@ function toggleAuthMode() {
   const input = document.getElementById('authEmail');
   if (input) input.focus();
 }
+
+// The single passphrase this started out with still opens the owner's board: the server
+// has never stopped accepting it. Only the page forgot to ask, which locked out any
+// device that had not already been signed in when accounts arrived.
+function toggleLegacyMode() {
+  authMode = authMode === 'legacy' ? 'login' : 'legacy';
+  setAuthMsg('');
+  renderAuthMode();
+  const field = document.getElementById(authMode === 'legacy' ? 'authKey' : 'authEmail');
+  if (field) field.focus();
+}
+
+async function submitLegacyKey() {
+  const key = document.getElementById('authKey').value || '';
+  if (!key.trim()) { setAuthMsg('the passphrase, please', true); return; }
+  const btn = document.getElementById('authSubmit');
+  btn.disabled = true;
+  btn.textContent = 'signing in...';
+  setAuthMsg('');
+  try {
+    // There is no endpoint that checks a passphrase on its own, so ask for the board with
+    // it and see whether the server hands one over.
+    const res = await fetch('/api/sync', { headers: { Authorization: 'Bearer ' + key.trim() } });
+    if (res.status === 401) { setAuthMsg("that passphrase doesn't work", true); return; }
+    if (!res.ok) { setAuthMsg("couldn't reach the server, try again", true); return; }
+    const state = await res.json().catch(() => ({}));
+    token = key.trim();
+    try { localStorage.setItem(LEGACY_KEY, token); } catch (e) {}
+    try { localStorage.removeItem(TOKEN_KEY); } catch (e) {}
+    account = state.account || null;
+    writeAccount(account);
+    daysMap = {}; backlog = []; ideas = []; quotes = [];
+    document.getElementById('authKey').value = '';
+    hideAuthGate();
+    applyBoardOwnership();
+    renderAccount();
+    loadAll();
+  } catch (e) {
+    setAuthMsg("couldn't reach the server, try again", true);
+  } finally {
+    btn.disabled = false;
+    renderAuthMode();
+  }
+}
 function renderAuthMode() {
   const signup = authMode === 'signup';
+  const legacy = authMode === 'legacy';
   if (pendingInvite) {
     const field = document.getElementById('authInvite');
     if (field && !field.value) field.value = pendingInvite;
   }
   const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
-  set('authTitle', signup ? 'make an account' : 'welcome back');
-  set('authBlurb', signup
-    ? 'your own checklist, synced across your devices. you need the invite code from whoever sent you this.'
-    : 'sign in to pick your checklist up where you left it.');
-  set('authSubmit', signup ? 'create account' : 'sign in');
+  const show = (id, on) => { const el = document.getElementById(id); if (el) el.hidden = !on; };
+  set('authTitle', legacy ? 'the old passphrase' : signup ? 'make an account' : 'welcome back');
+  set('authBlurb', legacy
+    ? 'the one you used before accounts existed. it still opens the same checklist.'
+    : signup
+      ? 'your own checklist, synced across your devices. you need the invite code from whoever sent you this.'
+      : 'sign in to pick your checklist up where you left it.');
+  set('authSubmit', legacy ? 'sign in' : signup ? 'create account' : 'sign in');
   set('authSwitch', signup ? 'already have an account? sign in' : 'no account yet? make one');
-  const invite = document.getElementById('authInvite');
-  if (invite) invite.hidden = !signup;
+  set('authLegacySwitch', legacy ? 'use an email and password instead' : 'use the old passphrase instead');
+  show('authEmail', !legacy);
+  show('authPassword', !legacy);
+  show('authKey', legacy);
+  show('authInvite', signup);
+  show('authSwitch', !legacy);
 }
 
 async function submitAuth() {
+  if (authMode === 'legacy') { submitLegacyKey(); return; }
   const email = (document.getElementById('authEmail').value || '').trim();
   const password = document.getElementById('authPassword').value || '';
   const invite = (document.getElementById('authInvite').value || '').trim();
