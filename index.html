@@ -892,6 +892,44 @@
   body.viewing-shared .task-notes .remove { display: inline-flex !important; }
   .day-inbox { margin: -4px 0 14px; }
   .day-inbox .section-heading { margin-top: 0; }
+  .inbox-card {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--card); border: 1px solid var(--border-light); border-radius: 8px;
+    padding: 8px 8px 8px 12px; margin-bottom: 6px; font-size: 12px;
+    animation: taskIn 0.28s cubic-bezier(.22,.9,.32,1);
+  }
+  .inbox-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+  .inbox-text b { color: var(--text); font-weight: 600; }
+  .inbox-quote { color: var(--text); }
+  .inbox-go {
+    flex-shrink: 0; font: inherit; font-size: 11px; padding: 4px 10px; border-radius: 20px; cursor: pointer;
+    background: var(--btn-blue); color: #fff; border: 1px solid var(--btn-blue);
+    transition: transform 0.15s cubic-bezier(.2,.8,.3,1.4), background 0.15s ease;
+  }
+  .inbox-go:hover { background: var(--btn-blue-hover); transform: scale(1.05); }
+  .inbox-card .remove { flex-shrink: 0; }
+
+  /* The composer: chips for what you're sending, one line, a send arrow. */
+  .composer { margin-top: 10px; }
+  .composer-modes { display: flex; gap: 4px; margin-bottom: 6px; flex-wrap: wrap; }
+  .composer-modes button {
+    font: inherit; font-size: 10px; letter-spacing: 0.04em; padding: 3px 9px; border-radius: 20px; cursor: pointer;
+    background: transparent; color: var(--muted); border: 1px solid var(--border-light);
+  }
+  .composer-modes button.on { background: var(--highlight); color: var(--text); border-color: var(--btn-blue); }
+  .composer-row {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 3px 3px 3px 12px;
+  }
+  .composer-row:focus-within { border-color: var(--btn-blue); }
+  .composer-input { flex: 1; min-width: 0; border: none; background: transparent; font: inherit; font-size: 12px; color: var(--text); outline: none; padding: 5px 0; }
+  .composer-send {
+    flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; border: none; cursor: pointer;
+    background: var(--btn-blue); color: #fff; font-size: 14px; line-height: 1;
+    transition: transform 0.15s cubic-bezier(.2,.8,.3,1.4), background 0.15s ease;
+  }
+  .composer-send:hover { background: var(--btn-blue-hover); transform: scale(1.08); }
+  .composer-send:disabled { opacity: 0.5; }
 
   /* A switch, since "shared mode" is a mode and not an action. */
   .shared-switch {
@@ -1675,15 +1713,8 @@
     <div id="dayNotes" hidden>
       <div class="section-heading" id="dayNotesTitle">notes</div>
       <div id="notesList"></div>
-      <div class="note-add" id="noteAdd" hidden>
-        <textarea id="noteInput" rows="2" placeholder="suggest a change to this day..."></textarea>
-        <button class="tray-reset" onclick="submitNote()">leave note</button>
-      </div>
-      <div class="note-add" id="askAdd" hidden>
-        <textarea id="askInput" rows="1" placeholder="ask them to add something, or to work on something together..."></textarea>
-        <button class="tray-reset" onclick="submitAsk()">ask to add</button>
-        <button class="tray-reset" onclick="submitAsk('collab')">ask to collab</button>
-      </div>
+      <!-- One slim bar for everything you can say about someone's day. -->
+      <div id="dayComposer" hidden></div>
       <div class="setting-note" id="noteMsg" hidden></div>
     </div>
   </div>
@@ -2424,8 +2455,9 @@ async function loadNotes(force) {
 function renderNotes() {
   const wrap = document.getElementById('dayNotes');
   const list = document.getElementById('notesList');
-  const add = document.getElementById('noteAdd');
+  const add = document.getElementById('dayComposer');
   const title = document.getElementById('dayNotesTitle');
+  if (add && !add.firstChild) add.appendChild(makeComposer(DAY_MODES, sendDayComposer, 'dayComposerInput'));
   if (!wrap || !list) return;
 
   const guest = viewingShared();
@@ -2434,7 +2466,6 @@ function renderNotes() {
   // On your own day the section is only worth the space once somebody has said something.
   wrap.hidden = !guest && dayNotes.length === 0;
   add.hidden = !guest;
-  document.getElementById('askAdd').hidden = !guest;
   title.textContent = guest ? 'notes on the day' : 'notes on your day';
 
   list.innerHTML = '';
@@ -2490,19 +2521,93 @@ function shortWhen(iso) {
   return then.toISOString().slice(0, 10);
 }
 
-async function submitNote() {
-  const input = document.getElementById('noteInput');
-  const text = (input.value || '').trim();
-  if (!text) { input.focus(); return; }
+// ---------- the composer ----------
+// A slim bar: pick what you're sending with a chip, type one line, send. Used under
+// someone's day and inside a task's card, so both read the same way.
+const DAY_MODES = [
+  { key: 'note', label: 'note', placeholder: 'say something about their day...' },
+  { key: 'add', label: 'ask to add', placeholder: 'something to add to their day...' },
+  { key: 'collab', label: 'collab', placeholder: 'something to work on together...' },
+];
+const TASK_MODES_GUEST = [
+  { key: 'note', label: 'note', placeholder: 'a note on this...' },
+  { key: 'step', label: 'step', placeholder: 'a step they could take...' },
+  { key: 'collab', label: 'collab', placeholder: 'ask to work on this together (optional note)...' },
+];
+const TASK_MODES_OWNER = [
+  { key: 'note', label: 'note', placeholder: 'a note to yourself, or a reply...' },
+];
+
+function makeComposer(modes, onSend, inputId, initialText, focus) {
+  const box = document.createElement('div');
+  box.className = 'composer';
+  let mode = modes[0].key;
+  const chips = document.createElement('div');
+  chips.className = 'composer-modes';
+  const input = document.createElement('input');
+  input.className = 'composer-input';
+  if (inputId) input.id = inputId;
+  input.value = initialText || '';
+  const setMode = (k) => {
+    mode = k;
+    const m = modes.find(x => x.key === k);
+    input.placeholder = m.placeholder;
+    chips.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.mode === k));
+  };
+  if (modes.length > 1) {
+    modes.forEach(m => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.dataset.mode = m.key;
+      b.textContent = m.label;
+      b.onclick = () => { setMode(m.key); input.focus(); };
+      chips.appendChild(b);
+    });
+    box.appendChild(chips);
+  }
+  const send = document.createElement('button');
+  send.type = 'button';
+  send.className = 'composer-send';
+  send.textContent = '↑';
+  send.title = 'send';
+  const go = async () => {
+    const text = input.value.trim();
+    // A collab ask can go without words: the task itself says what it's about.
+    if (!text && !(mode === 'collab' && input.dataset.allowEmpty)) { input.focus(); return; }
+    send.disabled = true;
+    try { if (await onSend(mode, text)) { input.value = ''; saveDrafts(); } }
+    finally { send.disabled = false; }
+  };
+  send.onclick = go;
+  input.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } };
+  const row = document.createElement('div');
+  row.className = 'composer-row';
+  row.append(input, send);
+  box.appendChild(row);
+  setMode(mode);
+  if (focus) setTimeout(() => input.focus(), 0);
+  return box;
+}
+
+async function sendDayComposer(mode, text) {
   setNoteMsg('');
   try {
-    const out = await noteFetch('POST', { date: currentDate, text });
-    if (!out || !out.ok) { setNoteMsg((out && out.data.error) || "that didn't send", 'bad'); return; }
-    input.value = '';
-    notes.push(out.data.comment);
-    renderNotes();
+    if (mode === 'note') {
+      const out = await noteFetch('POST', { date: currentDate, text });
+      if (!out || !out.ok) { setNoteMsg((out && out.data.error) || "that didn't send", 'bad'); return false; }
+      notes.push(out.data.comment);
+      renderNotes();
+      return true;
+    }
+    const kind = mode === 'collab' ? 'collab' : undefined;
+    const out = await peopleFetch('POST', { action: 'ask', kind, uid: viewingUid, date: currentDate, text });
+    if (!out || !out.ok) { setNoteMsg((out && out.data.error) || "that didn't send", 'bad'); return false; }
+    setNoteMsg(kind ? 'asked. if they say yes, a collab session opens for the two of you.'
+      : 'asked. it lands on their day when they say yes.', 'good');
+    return true;
   } catch (e) {
     setNoteMsg("couldn't reach the server", 'bad');
+    return false;
   }
 }
 
@@ -2602,24 +2707,48 @@ function renderPeople() {
   renderPeopleLists();
 }
 
+// One line each, on a small card: who, what, one action, and × to wave it off.
+function inboxCard(who, what, quote, actionLabel, onAction, onDismiss) {
+  const card = document.createElement('div');
+  card.className = 'inbox-card';
+  const text = document.createElement('div');
+  text.className = 'inbox-text';
+  const b = document.createElement('b');
+  b.textContent = who;
+  text.append(b, ' ' + what);
+  if (quote) {
+    const q = document.createElement('span');
+    q.className = 'inbox-quote';
+    q.textContent = ' “' + quote + '”';
+    text.appendChild(q);
+  }
+  card.title = who + ' ' + what + (quote ? ' “' + quote + '”' : '');
+  const act = document.createElement('button');
+  act.className = 'inbox-go';
+  act.textContent = actionLabel;
+  act.onclick = onAction;
+  const x = document.createElement('button');
+  x.className = 'remove';
+  x.textContent = '×';
+  x.title = 'no thanks';
+  x.onclick = onDismiss;
+  card.append(text, act, x);
+  return card;
+}
+
 function fillInbox(reqs, asks) {
-  people.requests.forEach(p => reqs.appendChild(personRow(p.name + ' wants to follow you', [
-    ['yes', () => peopleAct('approve', p.uid)],
-    ['no', () => peopleAct('deny', p.uid)],
-  ])));
+  people.requests.forEach(p => reqs.appendChild(inboxCard(p.name, 'wants to follow you', null,
+    'let them', () => peopleAct('approve', p.uid), () => peopleAct('deny', p.uid))));
   people.asks.forEach(a => {
     if (a.kind === 'collab') {
-      asks.appendChild(personRow(a.fromName + ' wants to collab on', [
-        ['start a session', () => acceptCollab(a)],
-        ['no', () => finishAsk(a.id)],
-      ], a.text));
+      asks.appendChild(inboxCard(a.fromName, 'wants to collab on', a.text,
+        'start session', () => acceptCollab(a), () => finishAsk(a.id)));
       return;
     }
-    const when = new Date(a.date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).toLowerCase();
-    asks.appendChild(personRow(a.fromName + ' asked to add, for ' + when, [
-      ['add it', () => acceptAsk(a)],
-      ['no', () => finishAsk(a.id)],
-    ], a.text));
+    const when = a.date === todayStr() ? 'today'
+      : new Date(a.date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short' }).toLowerCase();
+    asks.appendChild(inboxCard(a.fromName, 'asks to add, for ' + when + ':', a.text,
+      'add it', () => acceptAsk(a), () => finishAsk(a.id)));
   });
 }
 
@@ -2821,19 +2950,6 @@ async function finishAsk(id) {
   try { await peopleFetch('POST', { action: 'ask_done', id }); } catch (e) {}
 }
 
-async function submitAsk(kind) {
-  const input = document.getElementById('askInput');
-  const text = (input.value || '').trim();
-  if (!text) { input.focus(); return; }
-  try {
-    const out = await peopleFetch('POST', { action: 'ask', kind, uid: viewingUid, date: currentDate, text });
-    if (!out || !out.ok) { setNoteMsg((out && out.data.error) || "that didn't send", 'bad'); return; }
-    input.value = '';
-    setNoteMsg(kind === 'collab'
-      ? 'asked. if they say yes, a collab session opens for the two of you.'
-      : 'asked. it lands on their day when they say yes.', 'good');
-  } catch (e) { setNoteMsg("couldn't reach the server", 'bad'); }
-}
 
 // ---------- drafts ----------
 // Anything half-typed into an add box is kept on this device until it's sent, so a tab
@@ -2841,7 +2957,7 @@ async function submitAsk(kind) {
 // a draft rather than an entry: a half-written task landing on the list by itself would
 // be worse than waiting for enter.
 const DRAFT_FIELDS = ['dayInput', 'backlogInput', 'growthInput', 'quoteWhoInput', 'manifestoInput',
-  'noteInput', 'askInput', 'sessionTitle'];
+  'dayComposerInput', 'sessionTitle'];
 let sessionDrafts = {};
 function draftKey() { return nsKey('drafts') + (viewingUid ? '::board:' + viewingUid : ''); }
 function saveDrafts() {
@@ -4019,49 +4135,22 @@ function buildTaskNotes(item, draftText, focus) {
     wrap.appendChild(row);
   });
 
-  const add = document.createElement('div');
-  add.className = 'note-add';
-  const ta = document.createElement('textarea');
-  ta.className = 'task-note-input';
-  ta.rows = 2;
-  ta.placeholder = guest ? 'a note, or a step they could take...' : 'a note to yourself, or a reply...';
-  ta.value = draftText || '';
-  add.appendChild(ta);
-  const acts = document.createElement('div');
-  acts.className = 'task-note-acts';
-  const send = async (kind) => {
-    const t = ta.value.trim();
-    if (!t) { ta.focus(); return; }
-    const out = await noteFetch('POST', { date: currentDate, text: t, taskId: item.id, kind });
-    if (!out || !out.ok) { setNoteMsg((out && out.data.error) || "that didn't send", 'bad'); return; }
-    ta.value = '';
+  const composer = makeComposer(guest ? TASK_MODES_GUEST : TASK_MODES_OWNER, async (mode, t) => {
+    if (mode === 'collab') {
+      const out = await peopleFetch('POST', { action: 'ask', kind: 'collab', uid: viewingUid, date: currentDate, text: t ? item.text + ': ' + t : item.text });
+      setNoteMsg(out && out.ok ? 'asked. if they say yes, a collab session opens for the two of you.' : "couldn't ask", out && out.ok ? 'good' : 'bad');
+      return !!(out && out.ok);
+    }
+    const out = await noteFetch('POST', { date: currentDate, text: t, taskId: item.id, kind: mode === 'step' ? 'step' : 'note' });
+    if (!out || !out.ok) { setNoteMsg((out && out.data.error) || "that didn't send", 'bad'); return false; }
     notes.push(out.data.comment);
     renderDay();
     refreshSubPop();
-  };
-  const noteBtn = document.createElement('button');
-  noteBtn.className = 'tray-reset';
-  noteBtn.textContent = 'leave note';
-  noteBtn.onclick = () => send('note');
-  acts.appendChild(noteBtn);
-  if (guest) {
-    const stepBtn = document.createElement('button');
-    stepBtn.className = 'tray-reset';
-    stepBtn.textContent = 'suggest as a step';
-    stepBtn.onclick = () => send('step');
-    const collab = document.createElement('button');
-    collab.className = 'tray-reset';
-    collab.textContent = 'ask to collab on this';
-    collab.onclick = async () => {
-      const out = await peopleFetch('POST', { action: 'ask', kind: 'collab', uid: viewingUid, date: currentDate, text: item.text });
-      collab.textContent = out && out.ok ? 'asked ✓' : "couldn't ask";
-      collab.disabled = true;
-    };
-    acts.append(stepBtn, collab);
-  }
-  add.appendChild(acts);
-  wrap.appendChild(add);
-  if (focus) setTimeout(() => ta.focus(), 0);
+    return true;
+  }, null, draftText, focus);
+  composer.querySelector('.composer-input').classList.add('task-note-input');
+  composer.querySelector('.composer-input').dataset.allowEmpty = '1';
+  wrap.appendChild(composer);
   return wrap;
 }
 
@@ -5112,9 +5201,6 @@ document.getElementById('peopleSearch').addEventListener('input', (e) => {
   clearTimeout(searchTimer);
   const term = e.target.value;
   searchTimer = setTimeout(() => runSearch(term), 250);
-});
-document.getElementById('askInput').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitAsk(); }
 });
 // Tap a thing, then its name at the top of the card: that's where it's renamed.
 editableText(document.getElementById('subPopTitle'),
