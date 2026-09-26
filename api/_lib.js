@@ -296,6 +296,15 @@ export async function followerMaySee(viewerUid, targetUid, section) {
 
 const isWork = (item) => !item || item.category !== 'personal';
 
+export function moodsOf(state) {
+  const out = {};
+  const src = (state && state.checkins) || {};
+  for (const [date, c] of Object.entries(src)) {
+    if (c && Number.isInteger(c.stress)) out[date] = { stress: c.stress };
+  }
+  return out;
+}
+
 // What a guest is allowed to see: the work half of the days and the backlog, and none of
 // the ideas, quotes, manifesto or how their days felt, which are nobody else's business.
 export function workOnly(state) {
@@ -308,10 +317,11 @@ export function workOnly(state) {
   return {
     days,
     backlog: (Array.isArray(state && state.backlog) ? state.backlog : []).filter(isWork),
+    // How each day felt, and nothing else about the check-in: not what it moved.
+    checkins: moodsOf(state),
     ideas: [],
     quotes: [],
     manifesto: [],
-    checkins: {},
   };
 }
 

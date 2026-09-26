@@ -877,7 +877,7 @@
   }
   .metrics-detail .ln.was-moved .mk { color: var(--btn-blue); }
   .metrics-detail .ln.was-moved .tx { color: var(--muted); }
-  body.viewing-shared .checkin, body.viewing-shared .lighten { display: none !important; }
+  body.viewing-shared .lighten { display: none !important; }
 
   /* A switch, since "shared mode" is a mode and not an action. */
   .shared-switch {
@@ -889,6 +889,32 @@
   .group-tabs[hidden], #mainTabs[hidden] { display: none; }
   .guest-views { display: inline-flex; gap: 10px; }
   .group-hint { align-self: center; font-size: 11px; color: var(--muted); padding: 0 12px; }
+  /* Moods read at a glance: calm and okay quiet, stretched warm, fried hot. */
+  .tab-mood { font-size: 9px; letter-spacing: 0.04em; margin-left: 6px; padding: 1px 6px; border-radius: 10px; background: var(--highlight); color: var(--muted); }
+  .tab-mood.mood-2, .checkin-them.mood-2 { background: #f3e2c8; color: #8a5a1c; }
+  .tab-mood.mood-3, .checkin-them.mood-3 { background: #f2d0c8; color: #93352a; }
+  .checkin-them { font-size: 11px; padding: 3px 10px; border-radius: 20px; background: var(--highlight); color: var(--text); letter-spacing: 0.04em; }
+  .guest-backlog .ln { display: flex; gap: 8px; font-size: 12px; padding: 6px 2px; border-bottom: 1px solid var(--border-light); }
+  .guest-backlog .ln .mk { color: var(--border); width: 12px; flex-shrink: 0; }
+  .guest-backlog[hidden] { display: none; }
+
+  /* The card: paper sketch (the original), plain, frosted glass, or a picture of your own. */
+  .wrap.card-plain { background-image: none; background-color: var(--card); }
+  .wrap.card-plain .grain { display: none; }
+  .wrap.card-glass { background-image: none; background-color: transparent; }
+  .wrap.card-glass .grain { display: none; }
+  .wrap.card-glass .content {
+    background: hsl(var(--hue) calc(22% * var(--sat)) 96% / 0.5);
+    -webkit-backdrop-filter: blur(14px) saturate(1.2); backdrop-filter: blur(14px) saturate(1.2);
+  }
+  .wrap.card-photo { background-image: var(--card-img); background-size: cover; background-position: center; }
+  .wrap.card-photo .content { background: hsl(var(--hue) calc(22% * var(--sat)) 96% / 0.62); }
+  .card-choices { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+  .card-choice {
+    font: inherit; font-size: 11px; padding: 5px 10px; border-radius: 20px; cursor: pointer;
+    background: var(--card); color: var(--muted); border: 1px solid var(--border-light);
+  }
+  .card-choice.on { color: var(--text); border-color: var(--btn-blue); background: var(--highlight); }
   .guest-views .invite-act.on { color: var(--text); text-decoration: none; font-weight: 600; }
   body.shared-mode #guestBack { display: none; }
 
@@ -1537,10 +1563,6 @@
        being edited. -->
   <div class="guest-banner" id="guestBanner" hidden>
     <span id="guestBannerWho"></span>
-    <span class="guest-views">
-      <span class="invite-act" data-view="day" onclick="switchTab('day')">day</span>
-      <span class="invite-act" data-view="backlog" onclick="switchTab('backlog')">backlog</span>
-    </span>
     <button class="invite-act" id="guestBack" onclick="openMyBoard()">back to mine</button>
   </div>
 
@@ -1613,6 +1635,13 @@
     <div class="empty" id="dayEmptyPersonal" data-reorder="personal" style="display:none;">nothing here</div>
     <div class="completed-toggle" id="completedTogglePersonal" style="display:none;" onclick="toggleCompleted('personal')"></div>
     <ul id="dayListPersonalDone" style="display:none;"></ul>
+
+    <!-- On someone else's board: their backlog, under their day, so the whole of their
+         work is one scroll. -->
+    <div class="guest-backlog" id="guestBacklog" hidden>
+      <div class="section-heading">backlog</div>
+      <div id="guestBacklogList"></div>
+    </div>
 
     <!-- What other people would change about this day. Suggestions sitting beside the
          list, never edits to it. -->
@@ -1727,6 +1756,14 @@
         <button class="tray-reset" onclick="document.getElementById('lookBgInput').click()">choose a background</button>
         <button class="tray-reset" id="lookBgRemove" onclick="setLookBackground(null)" hidden>remove it</button>
         <input type="file" id="lookBgInput" accept="image/*" hidden>
+      </div>
+      <div class="card-choices" id="lookCard">
+        <span class="setting-note" style="margin:0">the card:</span>
+        <button class="card-choice" data-card="">paper sketch</button>
+        <button class="card-choice" data-card="plain">plain</button>
+        <button class="card-choice" data-card="glass">see-through</button>
+        <button class="card-choice" data-card="photo">a picture…</button>
+        <input type="file" id="lookCardInput" accept="image/*" hidden>
       </div>
       <div class="setting-note" id="lookMsg" hidden></div>
     </div>
@@ -2474,7 +2511,7 @@ function setPeopleMsg(msg, tone) {
 async function loadPeople() {
   if (viewingShared()) return;
   try {
-    const out = await peopleFetch('GET');
+    const out = await peopleFetch('GET', null, 'today=' + todayStr());
     if (!out || !out.ok) return;
     people = { ...people, ...out.data };
     renderPeople();
@@ -2882,6 +2919,7 @@ async function setSharedMode(on) {
   switchTab('day');
 }
 
+let myMoodToday = null;
 function renderGroup() {
   const sw = document.getElementById('sharedModeSwitch');
   if (sw) sw.checked = sharedMode;
@@ -2894,22 +2932,36 @@ function renderGroup() {
   main.hidden = on;
   if (!on) return;
   row.innerHTML = '';
-  const add = (label, uid, onClick) => {
+  const add = (label, uid, onClick, mood) => {
     const t = document.createElement('div');
-    t.className = 'tab' + ((uid || null) === (viewingUid || null) ? ' active' : '');
+    t.className = 'tab' + ((uid || null) === (viewingUid || null) && activeTab !== 'settings' ? ' active' : '');
     t.dataset.uid = uid || '';
     t.textContent = label;
+    if (mood != null && STRESS_LEVELS[mood]) {
+      const m = document.createElement('span');
+      m.className = 'tab-mood mood-' + mood;
+      m.textContent = STRESS_LEVELS[mood].word;
+      t.appendChild(m);
+    }
     t.onclick = onClick;
     row.appendChild(t);
   };
-  add('you', null, async () => { if (viewingShared()) await openMyBoard(); renderGroup(); switchTab('day'); });
-  sharingWithMe().forEach(p => add(p.name, p.uid, () => { if (viewingUid !== p.uid) openSharedBoard(p.uid, p.name); }));
+  // While someone else's board is loaded, `checkins` is theirs; remember our own.
+  if (!viewingShared()) myMoodToday = stressOf(todayStr());
+  add('you', null, async () => { if (viewingShared()) await openMyBoard(); renderGroup(); switchTab('day'); }, myMoodToday);
+  sharingWithMe().forEach(p => add(p.name, p.uid, () => { if (viewingUid !== p.uid) openSharedBoard(p.uid, p.name); }, p.mood));
   if (!sharingWithMe().length) {
     const hint = document.createElement('div');
     hint.className = 'group-hint';
     hint.textContent = 'no one yet. follow people on the people tab.';
     row.appendChild(hint);
   }
+  // Settings are yours wherever you are, so the gear stays; it takes you home first.
+  const gear = document.querySelector('#mainTabs .tab-settings').cloneNode(true);
+  gear.removeAttribute('onclick');
+  gear.classList.toggle('active', activeTab === 'settings' && !viewingShared());
+  gear.onclick = async () => { if (viewingShared()) await openMyBoard(); switchTab('settings'); };
+  row.appendChild(gear);
 }
 
 // ---------- your look ----------
@@ -2928,8 +2980,15 @@ function readLookCache() {
 }
 function writeLookCache(look) { try { localStorage.setItem(nsKey('look'), JSON.stringify(look)); } catch (e) {} }
 
-function applyLook(theme, bg) {
+function applyLook(theme, bg, cardBg) {
   theme = theme || {};
+  const wrap = document.querySelector('.wrap');
+  if (wrap) {
+    const card = theme.card === 'photo' && !cardBg ? '' : (theme.card || '');
+    ['card-plain', 'card-glass', 'card-photo'].forEach(c => wrap.classList.toggle(c, c === 'card-' + card));
+    if (card === 'photo') wrap.style.setProperty('--card-img', 'url("' + cardBg + '")');
+    else wrap.style.removeProperty('--card-img');
+  }
   const root = document.documentElement;
   if (Number.isFinite(theme.hue)) {
     root.dataset.palette = '1';
@@ -2951,24 +3010,23 @@ function applyLook(theme, bg) {
 
 function applyMyLook() {
   const look = readLookCache();
-  applyLook(look.theme, look.bg);
+  applyLook(look.theme, look.bg, look.cardBg);
   renderLookControls();
 }
 
 // The account's copy wins; the background is only fetched when it actually changed.
 async function syncMyLook(theme) {
   const cached = readLookCache();
-  let bg = cached.bg;
-  if ((theme.bg || null) !== (cached.theme.bg || null)) {
-    bg = null;
-    if (theme.bg) {
-      try {
-        const out = await peopleFetch('GET', null, 'look=me');
-        if (out && out.ok) bg = out.data.bg;
-      } catch (e) {}
-    }
+  let bg = cached.bg, cardBg = cached.cardBg || null;
+  const bgChanged = (theme.bg || null) !== (cached.theme.bg || null);
+  const cardChanged = (theme.cardBg || null) !== (cached.theme.cardBg || null);
+  if (bgChanged || cardChanged) {
+    try {
+      const out = await peopleFetch('GET', null, 'look=me');
+      if (out && out.ok) { bg = out.data.bg; cardBg = out.data.cardBg; }
+    } catch (e) {}
   }
-  writeLookCache({ theme, bg });
+  writeLookCache({ theme, bg, cardBg });
   if (!viewingShared()) applyMyLook();
 }
 
@@ -2976,7 +3034,7 @@ async function loadTheirLook(uid) {
   try {
     const out = await peopleFetch('GET', null, 'look=' + encodeURIComponent(uid));
     if (viewingUid !== uid) return;
-    if (out && out.ok) applyLook(out.data.theme, out.data.bg);
+    if (out && out.ok) applyLook(out.data.theme, out.data.bg, out.data.cardBg);
   } catch (e) {}
 }
 
@@ -2987,19 +3045,26 @@ function setLookMsg(msg, tone) {
   el.className = 'setting-note' + (tone ? ' ' + tone : '');
 }
 
-async function saveLook(patch, bgSrc) {
+async function saveLook(patch, bgSrc, cardSrc) {
   // Shown straight away; the account catches up a moment later.
   const cached = readLookCache();
   const theme = { ...cached.theme, ...patch };
   Object.keys(theme).forEach(k => { if (theme[k] == null || theme[k] === '') delete theme[k]; });
-  writeLookCache({ theme, bg: bgSrc !== undefined ? bgSrc : cached.bg });
+  writeLookCache({
+    theme,
+    bg: bgSrc !== undefined ? bgSrc : cached.bg,
+    cardBg: cardSrc !== undefined ? cardSrc : (cached.cardBg || null),
+  });
   applyMyLook();
   if (!getToken()) return;
   // The whole look every time, and one save at a time: two quick changes sent as halves
   // could land out of order and the second would drop the first.
   lookSaveChain = lookSaveChain.then(async () => {
     const whole = readLookCache().theme;
-    const body = { hue: whole.hue ?? null, sat: whole.sat ?? null, title: whole.title ?? null, bg: whole.bg ?? null };
+    const body = {
+      hue: whole.hue ?? null, sat: whole.sat ?? null, title: whole.title ?? null, bg: whole.bg ?? null,
+      card: whole.card ?? null, cardBg: whole.cardBg ?? null,
+    };
     try {
       const out = await peopleFetch('PUT', { theme: body });
       if (!out || !out.ok) { setLookMsg((out && out.data.error) || "that didn't save", 'bad'); return; }
@@ -3052,6 +3117,20 @@ function renderLookControls() {
   if (prev) prev.style.backgroundImage = look.bg ? 'url("' + look.bg + '")' : '';
   const rm = document.getElementById('lookBgRemove');
   if (rm) rm.hidden = !look.bg;
+  document.querySelectorAll('#lookCard .card-choice').forEach(b => {
+    b.classList.toggle('on', (b.dataset.card || '') === (look.theme.card || ''));
+  });
+}
+
+async function setCardPicture(file) {
+  setLookMsg('putting it up...');
+  const src = await downscaleImage(file, 1600);
+  const id = await photoId(src);
+  try {
+    const up = await peopleFetch('PUT', { photo: { id, src } });
+    if (!up || !up.ok) { setLookMsg((up && up.data.error) || "that picture didn't upload", 'bad'); return; }
+  } catch (e) { setLookMsg("couldn't reach the server", 'bad'); return; }
+  await saveLook({ card: 'photo', cardBg: id }, undefined, src);
 }
 
 function hexToHueSat(hex) {
@@ -3605,7 +3684,6 @@ function switchTab(tab) {
   if (tab === 'settings') { renderAccount(); loadInvites(); loadTeam(); }
   renderPlacedStickers();          // each tab keeps its own stickers
   if (sharedMode) renderGroup();
-  document.querySelectorAll('.guest-views .invite-act').forEach(a => a.classList.toggle('on', a.dataset.view === tab));
   // On a phone you're usually deep in a long list when you switch tabs; land at the
   // top of the new one rather than in the middle of it.
   bringDropTargetsIntoView();
@@ -4708,6 +4786,18 @@ document.getElementById('lookBgInput').addEventListener('change', (e) => {
   e.target.value = '';
   if (f) setLookBackground(f);
 });
+document.querySelectorAll('#lookCard .card-choice').forEach(b => {
+  b.addEventListener('click', () => {
+    const card = b.dataset.card || null;
+    if (card === 'photo') { document.getElementById('lookCardInput').click(); return; }
+    saveLook({ card });
+  });
+});
+document.getElementById('lookCardInput').addEventListener('change', (e) => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (f) setCardPicture(f);
+});
 let nameTimer = null;
 document.getElementById('profileName').addEventListener('input', (e) => {
   clearTimeout(nameTimer);
@@ -4799,6 +4889,33 @@ function planOrder(items) {
     console.warn('planner unavailable, keeping the list as it is', e);
     return items;
   }
+}
+
+function renderGuestBacklog() {
+  const box = document.getElementById('guestBacklog');
+  const list = document.getElementById('guestBacklogList');
+  if (!box || !list) return;
+  box.hidden = !viewingShared();
+  if (box.hidden) return;
+  list.innerHTML = '';
+  const work = backlog.filter(i => i.category !== 'personal');
+  if (!work.length) {
+    const none = document.createElement('div');
+    none.className = 'empty';
+    none.textContent = 'backlog is empty';
+    list.appendChild(none);
+  }
+  work.forEach(i => {
+    const ln = document.createElement('div');
+    ln.className = 'ln';
+    const mk = document.createElement('span');
+    mk.className = 'mk';
+    mk.textContent = '·';
+    const tx = document.createElement('span');
+    tx.textContent = i.text;
+    ln.append(mk, tx);
+    list.appendChild(ln);
+  });
 }
 
 // ---------- CARRYING UNFINISHED WORK FORWARD ----------
@@ -4893,6 +5010,7 @@ function setStress(level) {
   saveDays();
   renderDateStrip();
   renderDay();
+  if (sharedMode) renderGroup();
 }
 
 function lighten(date) {
@@ -4936,10 +5054,25 @@ function renderCheckin() {
   const box = document.getElementById('checkinOpts');
   const wrap = document.getElementById('checkin');
   if (!box) return;
-  // Only today and the days ahead: how last tuesday felt changes nothing now.
-  wrap.hidden = currentDate < todayStr();
   box.innerHTML = '';
   const level = stressOf(currentDate);
+  const q = wrap.querySelector('.checkin-q');
+  // On someone else's board it's something to read, on any day they said something.
+  if (viewingShared()) {
+    const name = viewingEmail || 'they';
+    wrap.hidden = level == null;
+    if (q) q.textContent = currentDate === todayStr() ? name + ' is feeling' : name + ' was feeling';
+    if (level != null) {
+      const tag = document.createElement('span');
+      tag.className = 'checkin-them mood-' + level;
+      tag.textContent = STRESS_LEVELS[level].word;
+      box.appendChild(tag);
+    }
+    return;
+  }
+  if (q) q.textContent = "how's today feeling?";
+  // Only today and the days ahead: how last tuesday felt changes nothing now.
+  wrap.hidden = currentDate < todayStr();
   STRESS_LEVELS.forEach((s, i) => {
     const b = document.createElement('button');
     b.textContent = s.word;
@@ -5008,6 +5141,7 @@ function renderDay() {
   // say it didn't happen, but it isn't shown there as something still to do.
   const items = daysMap[currentDate].filter(i => !i.movedTo);
   renderCheckin();
+  renderGuestBacklog();
 
   ['work', 'personal'].forEach(category => {
     const suffix = category === 'work' ? 'Work' : 'Personal';
@@ -5306,40 +5440,41 @@ const STICKER_PLACE_KEY = 'stickerPlacements';
 // Every sticker in /stickers, with the size it gets when placed.
 // [name, size when placed, theme]
 const STICKER_CATALOG = [
-  ['crescent-moon',58,'celestial'],
-  ['dawn',52,'celestial'],
-  ['moon-fairy',56,'celestial'],
-  ['star',44,'celestial'],
-  ['star-hide',40,'celestial'],
-  ['star-moon-pair',56,'celestial'],
-  ['sun',46,'celestial'],
-  ['sun-face',50,'celestial'],
-  ['flower-fairy',48,'fairies'],
-  ['primrose-fairy',46,'fairies'],
-  ['water-maiden',52,'fairies'],
-  ['yellow-fairy',48,'fairies'],
-  ['goldfish-boy',54,'folk'],
-  ['heart-cats',52,'folk'],
-  ['jester-cat',54,'folk'],
-  ['pierrot',56,'folk'],
-  ['fawn',58,'creatures'],
-  ['fish',50,'creatures'],
-  ['lantern-moth',40,'creatures'],
-  ['mouse',46,'creatures'],
-  ['swans',62,'creatures'],
-  ['wizard-rabbit',52,'creatures'],
-  ['wolf',46,'creatures'],
-  ['books',56,'curios'],
-  ['dark-hair',52,'curios'],
-  ['heart-eye',40,'curios'],
-  ['lips',42,'curios'],
-  ['guinness',46,'food'],
-  ['pasteis',46,'food'],
-  ['strawberries',48,'food'],
-  ['tram',56,'travel'],
+  ['crescent-moon',58,'dreamy'],
+  ['dawn',52,'dreamy'],
+  ['moon-fairy',56,'dreamy'],
+  ['star',44,'dreamy'],
+  ['star-hide',40,'dreamy'],
+  ['star-moon-pair',56,'dreamy'],
+  ['sun',46,'dreamy'],
+  ['sun-face',50,'dreamy'],
+  ['flower-fairy',48,'nouveau'],
+  ['primrose-fairy',46,'nouveau'],
+  ['water-maiden',52,'nouveau'],
+  ['yellow-fairy',48,'nouveau'],
+  ['goldfish-boy',54,'kitschy'],
+  ['heart-cats',52,'kitschy'],
+  ['jester-cat',54,'kitschy'],
+  ['pierrot',56,'kitschy'],
+  ['fawn',58,'cute'],
+  ['fish',50,'cute'],
+  ['lantern-moth',40,'tale'],
+  ['mouse',46,'cute'],
+  ['swans',62,'cute'],
+  ['wizard-rabbit',52,'tale'],
+  ['wolf',46,'tale'],
+  ['books',56,'tale'],
+  ['dark-hair',52,'edgy'],
+  ['heart-eye',40,'edgy'],
+  ['lips',42,'edgy'],
+  ['guinness',46,'common'],
+  ['pasteis',46,'common'],
+  ['strawberries',48,'common'],
+  ['tram',56,'common'],
 ];
 
-const STICKER_THEMES = ['all', 'celestial', 'fairies', 'folk', 'creatures', 'curios', 'food', 'travel'];
+// Named for how they feel rather than what they are.
+const STICKER_THEMES = ['all', 'dreamy', 'nouveau', 'kitschy', 'cute', 'tale', 'edgy', 'common'];
 let stickerTheme = 'all';
 
 // Where each one sits before anyone moves it: side of the card, and % down the page.

@@ -1,10 +1,10 @@
 import {
   authorize, getProfiles, putProfiles, getFollows, putFollows, getStickers, putStickers,
   followerMaySee, getState, readBody, getAsks, putAsks, getSessions, putSessions, newId,
-  getPins, putPins, getPhoto, putPhoto,
+  getPins, putPins, getPhoto, putPhoto, moodsOf,
 } from './_lib.js';
 
-// GET  /api/people                     -> your profile, requests, followers, following
+// GET  /api/people[?today=]            -> your profile, requests, followers, following (with today's mood)
 // GET  /api/people?q=name              -> people whose name matches
 // GET  /api/people?group=1&date=       -> the work day of everyone you follow who shows it
 // GET  /api/people?stickers=<uid>      -> someone's sticker board, if they show it to you
@@ -102,7 +102,8 @@ export default async function handler(req, res) {
         if (!allowed) { res.status(403).json({ error: 'not shared with you' }); return; }
         const theme = (profiles[uid] && profiles[uid].theme) || {};
         const bg = theme.bg ? await getPhoto(uid, theme.bg) : null;
-        res.status(200).json({ theme, bg: bg && bg.src ? bg.src : null });
+        const card = theme.cardBg ? await getPhoto(uid, theme.cardBg) : null;
+        res.status(200).json({ theme, bg: bg && bg.src ? bg.src : null, cardBg: card && card.src ? card.src : null });
         return;
       }
 
@@ -138,7 +139,17 @@ export default async function handler(req, res) {
         })),
         requests: follows.filter((f) => f.to === me && f.status === 'pending').map((f) => person(f.from, f.fromEmail)),
         followers: follows.filter((f) => f.to === me && f.status === 'approved').map((f) => person(f.from, f.fromEmail)),
-        following: follows.filter((f) => f.from === me).map((f) => ({ ...person(f.to), status: f.status })),
+        following: await Promise.all(follows.filter((f) => f.from === me).map(async (f) => {
+          const out = { ...person(f.to), status: f.status };
+          // Today's mood, only for people whose day you can see. "today" is the caller's
+          // own date, since the server's clock is in a different place from anyone's day.
+          const today = String(q.today || '').slice(0, 10);
+          if (today && f.status === 'approved' && out.showDay) {
+            const mood = moodsOf(await getState(f.to))[today];
+            if (mood) out.mood = mood.stress;
+          }
+          return out;
+        })),
       });
       return;
     }
@@ -161,6 +172,8 @@ export default async function handler(req, res) {
         if ('sat' in t) { if (Number.isFinite(t.sat)) out.sat = Math.min(1.4, Math.max(0, t.sat)); else delete out.sat; }
         if ('title' in t) { const title = String(t.title || '').replace(/\s+/g, ' ').trim().slice(0, 40); if (title) out.title = title; else delete out.title; }
         if ('bg' in t) { if (PHOTO_ID.test(String(t.bg || ''))) out.bg = t.bg; else delete out.bg; }
+        if ('card' in t) { if (['plain', 'glass', 'photo'].includes(t.card)) out.card = t.card; else delete out.card; }
+        if ('cardBg' in t) { if (PHOTO_ID.test(String(t.cardBg || ''))) out.cardBg = t.cardBg; else delete out.cardBg; }
         p.theme = out;
       }
       profiles[me] = p;
