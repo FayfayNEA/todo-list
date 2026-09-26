@@ -3,3 +3,5 @@
 *.md
 .claude
 .DS_Store
+# The local practice copy with pretend accounts; never part of the live site.
+dev

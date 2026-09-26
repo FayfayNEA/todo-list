@@ -108,7 +108,7 @@ export default async function handler(req, res) {
       }
 
       if (q.stickers) {
-        const uid = String(q.stickers);
+        const uid = q.stickers === 'me' ? me : String(q.stickers);
         if (!(await followerMaySee(me, uid, 'showStickers'))) {
           res.status(403).json({ error: "they haven't shared their stickers with you" });
           return;

@@ -11,5 +11,8 @@
   "license": "ISC",
   "dependencies": {
     "@vercel/blob": "^2.8.0"
+  },
+  "scripts": {
+    "dev:local": "node --import ./dev/register.mjs dev/server.mjs"
   }
 }

@@ -76,6 +76,18 @@ rather than rows in a table, so there's nothing to expire or clean up.
 - The eight polaroids are baked into `index.html` and only *shown* to the owner's account.
   Anyone determined enough to read the page source can still see them.
 
+## Practice copy with pretend accounts
+
+```bash
+npm run dev:local     # then open http://localhost:4325/dev
+```
+
+The real page and the real `api/` handlers over an in-memory store, seeded with an owner
+account and three pretend people (Mika, Jo, Ren) who each have a colour, a background,
+stickers, a day, a backlog and a mood, and follow each other. `/dev` switches between
+them with one tap. Nothing touches the live site's data, it all resets on restart, and
+`dev/` is kept out of deploys by `.vercelignore`.
+
 ## Local development
 
 ```bash

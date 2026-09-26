@@ -666,7 +666,9 @@
     font-size: 13px; font-weight: 600; color: var(--text);
     margin-bottom: 12px; padding-bottom: 10px;
     border-bottom: 1px solid var(--border-light);
+    outline: none; border-radius: 4px; cursor: text;
   }
+  .sub-pop-title:focus { background: var(--highlight); box-shadow: 0 0 0 4px var(--highlight); }
   .reflect { display: flex; flex-direction: column; gap: 4px; }
   .reflect-label {
     font-size: 10px; color: var(--muted); letter-spacing: 0.04em;
@@ -825,8 +827,8 @@
   #manifestoList { list-style: none; margin: 18px 0 0; padding: 0; counter-reset: value; }
   .manifesto-item {
     position: relative; counter-increment: value;
-    display: flex; align-items: baseline; gap: 14px;
-    padding: 14px 34px 14px 4px;
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 14px;
+    padding: 14px 4px;
     border-bottom: 1px solid var(--border-light);
     animation: taskIn 0.28s cubic-bezier(.22,.9,.32,1);
     transition: opacity 0.2s ease, transform 0.2s ease;
@@ -841,7 +843,15 @@
     outline: none; border-radius: 4px; cursor: text;
   }
   .manifesto-text:focus { background: var(--highlight); box-shadow: 0 0 0 4px var(--highlight); }
-  .manifesto-item .remove { position: absolute; right: 2px; top: 12px; }
+  .manifesto-head { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 10px; cursor: pointer; padding-right: 30px; position: relative; }
+  .manifesto-head .remove { position: absolute; right: 2px; top: -2px; }
+  .manifesto-count { flex-shrink: 0; font-size: 10px; color: var(--muted); letter-spacing: 0.04em; }
+  .manifesto-body { flex-basis: 100%; padding: 10px 0 2px 32px; }
+  .manifesto-bullets { list-style: none; margin: 0 0 6px; padding: 0; }
+  .manifesto-bullets li { position: relative; display: flex; gap: 8px; align-items: baseline; font-size: 13px; line-height: 1.55; padding: 3px 0; }
+  .manifesto-bullets li::before { content: "\2022"; color: var(--btn-blue); flex-shrink: 0; }
+  .bullet-text { flex: 1; min-width: 0; outline: none; border-radius: 4px; }
+  .bullet-text:focus { background: var(--highlight); box-shadow: 0 0 0 3px var(--highlight); }
 
   /* Finished ideas leave growth and settle here, folded away unless you go looking. */
   .grown-card .ln .when { margin-left: auto; padding-left: 10px; flex-shrink: 0; font-size: 10px; color: var(--muted); }
@@ -2516,6 +2526,7 @@ async function loadPeople() {
     people = { ...people, ...out.data };
     renderPeople();
     renderGroup();
+    adoptPublishedStickers();
     if (people.me && people.me.theme) syncMyLook(people.me.theme);
   } catch (e) {}
 }
@@ -2673,6 +2684,25 @@ async function sendBoard() {
     layout.push({ photo: id, rot: p.rot, dx: p.dx, top: p.top });
   }
   await peopleFetch('PUT', { pins: layout });
+}
+
+// A device that has never had a board of its own (a new phone, a second browser) takes
+// the one on the account rather than publishing its empty one over it.
+let adoptedStickers = false;
+async function adoptPublishedStickers() {
+  if (adoptedStickers || viewingShared() || !people.me.showStickers) return;
+  adoptedStickers = true;
+  let local = null;
+  try { local = localStorage.getItem(nsKey(STICKER_PLACE_KEY)); } catch (e) {}
+  if (local !== null) return;
+  try {
+    const out = await peopleFetch('GET', null, 'stickers=me');
+    if (!out || !out.ok || !Array.isArray(out.data.stickers) || viewingShared()) return;
+    stickerPlacements = out.data.stickers;
+    try { localStorage.setItem(nsKey(STICKER_PLACE_KEY), JSON.stringify(stickerPlacements)); } catch (e) {}
+    markCoordMigrated(nsKey('stickerCoords'));
+    renderPlacedStickers();
+  } catch (e) {}
 }
 
 async function loadOtherStickers(uid) {
@@ -3836,7 +3866,14 @@ function refreshSubPop() {
   const item = findItemById(id);
   const pop = document.getElementById('subPop');
   if (!item) { if (!pop.hidden) closeSubPop(); return; }
-  document.getElementById('subPopTitle').textContent = item.text;
+  const titleEl = document.getElementById('subPopTitle');
+  if (document.activeElement !== titleEl) titleEl.textContent = item.text;
+  // Someone else's task is theirs to rename.
+  if (viewingShared()) titleEl.contentEditable = 'false';
+  else if (!titleEl.isContentEditable) {
+    try { titleEl.contentEditable = 'plaintext-only'; } catch (e) {}
+    if (!titleEl.isContentEditable) titleEl.contentEditable = 'true';
+  }
   const body = document.getElementById('subPopBody');
   body.innerHTML = '';
   body.appendChild(buildSubPanel(item));
@@ -4112,43 +4149,70 @@ function removeManifestoItem(id) {
   setTimeout(renderManifesto, 220);
 }
 
-function renderManifesto() {
+// A value can open into a few bullets: what you'd want to write about it, the
+// examples, the questions. Tapping the row opens it; the title stays editable in place.
+let manifestoOpen = new Set();
+
+function editableText(el, get, set, opts = {}) {
+  el.contentEditable = 'plaintext-only';
+  if (el.contentEditable !== 'plaintext-only') el.contentEditable = 'true';
+  el.spellcheck = false;
+  // Saved a moment after typing stops, not only when you click away: closing the tab
+  // mid-thought shouldn't cost the thought.
+  let typing = null;
+  const commit = () => {
+    const val = (el.innerText || '').trim();
+    if (val && val !== get()) { set(val); queuePush(); }
+  };
+  el.onkeydown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); el.blur(); if (opts.onEnter) opts.onEnter(); }
+    if (e.key === 'Escape') { el.textContent = get(); el.blur(); }
+  };
+  el.oninput = () => { clearTimeout(typing); typing = setTimeout(commit, 700); };
+  el.onblur = () => {
+    clearTimeout(typing);
+    if (!(el.innerText || '').trim()) { el.textContent = get(); return; }
+    commit();
+  };
+}
+
+function renderManifesto(force) {
   const listEl = document.getElementById('manifestoList');
   const emptyEl = document.getElementById('manifestoEmpty');
   if (!listEl) return;
   // Never under someone's cursor: a sync landing mid-sentence would throw the edit away.
-  if (listEl.contains(document.activeElement)) return;
+  if (!force && listEl.contains(document.activeElement)) return;
   listEl.innerHTML = '';
   emptyEl.style.display = manifesto.length ? 'none' : 'block';
 
   manifesto.forEach(value => {
+    const open = manifestoOpen.has(value.id);
+    const bullets = Array.isArray(value.bullets) ? value.bullets : [];
     const li = document.createElement('li');
-    li.className = 'manifesto-item';
+    li.className = 'manifesto-item' + (open ? ' open' : '');
     li.dataset.id = value.id;
+
+    const head = document.createElement('div');
+    head.className = 'manifesto-head';
+    head.onclick = (e) => {
+      // Tapping the words when it's already open is editing them, not closing it.
+      if (open && e.target === text) return;
+      if (open) manifestoOpen.delete(value.id); else manifestoOpen.add(value.id);
+      renderManifesto(true);
+      if (!open && e.target === text) {
+        const again = document.querySelector(`.manifesto-item[data-id="${value.id}"] .manifesto-text`);
+        if (again) again.focus();
+      }
+    };
 
     const text = document.createElement('div');
     text.className = 'manifesto-text';
     text.textContent = value.text;
-    text.contentEditable = 'plaintext-only';
-    if (text.contentEditable !== 'plaintext-only') text.contentEditable = 'true';
-    text.spellcheck = false;
-    text.onkeydown = (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); text.blur(); }
-      if (e.key === 'Escape') { text.textContent = value.text; text.blur(); }
-    };
-    // Saved a moment after typing stops, not only when you click away: closing the tab
-    // mid-thought shouldn't cost the thought.
-    let typing = null;
-    const commit = () => {
-      const val = (text.innerText || '').trim();
-      if (val && val !== value.text) { value.text = val; queuePush(); }
-    };
-    text.oninput = () => { clearTimeout(typing); typing = setTimeout(commit, 700); };
-    text.onblur = () => {
-      clearTimeout(typing);
-      if (!(text.innerText || '').trim()) { text.textContent = value.text; return; }
-      commit();
-    };
+    editableText(text, () => value.text, (v) => { value.text = v; });
+
+    const count = document.createElement('span');
+    count.className = 'manifesto-count';
+    count.textContent = bullets.length ? bullets.length + (bullets.length === 1 ? ' note' : ' notes') : '';
 
     const remove = document.createElement('button');
     remove.className = 'remove';
@@ -4156,8 +4220,49 @@ function renderManifesto() {
     remove.title = 'remove this';
     remove.onclick = (e) => { e.stopPropagation(); removeManifestoItem(value.id); };
 
-    li.appendChild(text);
-    li.appendChild(remove);
+    head.append(text, count, remove);
+    li.appendChild(head);
+
+    if (open) {
+      const body = document.createElement('div');
+      body.className = 'manifesto-body';
+      const ul = document.createElement('ul');
+      ul.className = 'manifesto-bullets';
+      bullets.forEach(b => {
+        const bl = document.createElement('li');
+        const bt = document.createElement('span');
+        bt.className = 'bullet-text';
+        bt.textContent = b.text;
+        editableText(bt, () => b.text, (v) => { b.text = v; });
+        const del = document.createElement('button');
+        del.className = 'sub-remove';
+        del.textContent = '\u00d7';
+        del.onclick = () => {
+          value.bullets = bullets.filter(x => x.id !== b.id);
+          queuePush();
+          renderManifesto(true);
+        };
+        bl.append(bt, del);
+        ul.appendChild(bl);
+      });
+      body.appendChild(ul);
+      const add = document.createElement('input');
+      add.className = 'sub-add';
+      add.placeholder = 'add a bullet: what you would write about this...';
+      add.onkeydown = (e) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        const t = add.value.trim();
+        if (!t) return;
+        value.bullets = [...bullets, { id: crypto.randomUUID(), text: t }];
+        queuePush();
+        renderManifesto(true);
+        const again = document.querySelector(`.manifesto-item[data-id="${value.id}"] .sub-add`);
+        if (again) again.focus();
+      };
+      body.appendChild(add);
+      li.appendChild(body);
+    }
     listEl.appendChild(li);
   });
 }
@@ -4188,7 +4293,8 @@ function openIdeaPop(id) {
   ideaPopZoom = 0;
   card.classList.remove('zoomed', 'zoomed2');
 
-  document.getElementById('ideaPopTitle').textContent = idea.text;
+  const ideaTitle = document.getElementById('ideaPopTitle');
+  ideaTitle.textContent = idea.text;
   REFLECT_FIELDS.forEach(([key, elId]) => { document.getElementById(elId).value = idea[key] || ''; });
 
   const row = document.querySelector(`#ideasList li[data-id="${id}"]`);
@@ -4210,6 +4316,8 @@ function closeIdeaPop() {
   const pop = document.getElementById('ideaPop');
   const card = document.getElementById('ideaPopCard');
   if (pop.hidden) return;
+  const ideaTitle = document.getElementById('ideaPopTitle');
+  if (document.activeElement === ideaTitle) ideaTitle.blur();
   saveIdeaReflection();
   const row = openIdeaId ? document.querySelector(`#ideasList li[data-id="${openIdeaId}"]`) : null;
   openIdeaId = null;
@@ -4252,6 +4360,7 @@ function openSubPop(id) {
 function flipOpen(pop, card, fromEl, focusSelector) {
   const startRect = fromEl ? fromEl.getBoundingClientRect() : null;
   card.style.transition = 'none';
+  pop.__closing = null;      // cancels a close still animating out
   pop.hidden = false;
 
   if (startRect) {
@@ -4286,7 +4395,11 @@ function flipClose(pop, card, toEl) {
   }
   card.style.opacity = '0';
 
+  // Opening something else before this finishes must win: without the check, the
+  // closing card's timer hid the one that had just opened.
+  const closing = pop.__closing = {};
   setTimeout(() => {
+    if (pop.__closing !== closing || pop.classList.contains('open')) return;
     pop.hidden = true;
     card.style.transition = 'none';
     card.style.transform = '';
@@ -4299,13 +4412,16 @@ function flipClose(pop, card, toEl) {
 function closeSubPop() {
   const pop = document.getElementById('subPop');
   const card = document.getElementById('subPopCard');
-  if (pop.hidden) { expandedItems.clear(); renderDay(); return; }
+  const titleEl = document.getElementById('subPopTitle');
+  if (document.activeElement === titleEl) titleEl.blur();
+  if (pop.hidden) { expandedItems.clear(); renderDay(); renderBacklog(); return; }
 
   const id = [...expandedItems][0];
   const row = id != null ? document.querySelector(`li.task-item[data-id="${id}"]`) : null;
 
   expandedItems.clear();
   renderDay();
+  renderBacklog();
   flipClose(pop, card, row);
 }
 
@@ -4813,6 +4929,13 @@ document.getElementById('peopleSearch').addEventListener('input', (e) => {
 document.getElementById('askInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitAsk(); }
 });
+// Tap a thing, then its name at the top of the card: that's where it's renamed.
+editableText(document.getElementById('subPopTitle'),
+  () => { const it = findItemById([...expandedItems][0]); return it ? it.text : ''; },
+  (v) => { const it = findItemById([...expandedItems][0]); if (it && !viewingShared()) it.text = v; });
+editableText(document.getElementById('ideaPopTitle'),
+  () => { const it = ideas.find(i => i.id === openIdeaId); return it ? it.text : ''; },
+  (v) => { const it = ideas.find(i => i.id === openIdeaId); if (it) it.text = v; });
 document.getElementById('manifestoInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitManifestoInput(); }
 });
@@ -5248,6 +5371,7 @@ function renderBacklog() {
     attachDrag(li, {
       onDay: (d) => scheduleBacklogItem(item.id, d),
       onReorder: (drop) => reorderBacklog(item.id, drop),
+      onTap: () => toggleSubPanel(item.id),
     });
     return li;
   }
@@ -5585,7 +5709,8 @@ function newPlacementId() {
 }
 
 function saveStickerPlacements() {
-  try { localStorage.setItem(STICKER_PLACE_KEY, JSON.stringify(stickerPlacements)); } catch (e) {}
+  // Per account: two people on one browser each have their own board.
+  try { localStorage.setItem(nsKey(STICKER_PLACE_KEY), JSON.stringify(stickerPlacements)); } catch (e) {}
   publishStickers();
 }
 
@@ -5613,7 +5738,7 @@ function seedStickerPlacements() {
 
 function initStickers() {
   let saved = null;
-  try { saved = JSON.parse(localStorage.getItem(STICKER_PLACE_KEY)); } catch (e) {}
+  try { saved = JSON.parse(localStorage.getItem(nsKey(STICKER_PLACE_KEY))); } catch (e) {}
   stickerPlacements = Array.isArray(saved) ? saved : seedStickerPlacements();
   // A sticker that's been retired shouldn't leave a broken image on the board.
   const known = new Set(STICKER_CATALOG.map(s => s[0]));
@@ -5626,11 +5751,15 @@ function initStickers() {
     // everywhere else and left them faded on this one. The board is one board now.
     delete p.tab;
   });
-  if (needsCoordMigration('stickerCoords')) {
+  if (needsCoordMigration(nsKey('stickerCoords'))) {
     stickerPlacements.forEach(p => migrateSpot(p, p.size, p.size));
-    markCoordMigrated('stickerCoords');
+    markCoordMigrated(nsKey('stickerCoords'));
   }
-  saveStickerPlacements();
+  // Written back only if this device had a board: an empty key would stop it from
+  // picking up the one on the account.
+  if (Array.isArray(saved) || stickerPlacements.length) {
+    try { localStorage.setItem(nsKey(STICKER_PLACE_KEY), JSON.stringify(stickerPlacements)); } catch (e) {}
+  }
   renderPlacedStickers();
 }
 
@@ -6465,7 +6594,7 @@ renderAccount();
 restoreDrafts();
 applyMyLook();
 renderGroup();
-loadAll().then(loadPeople).then(publishBoard);
+loadAll().then(loadPeople);
 // Record which build this tab is running, so a later check can tell it has fallen behind.
 checkPageVersion();
 </script>
