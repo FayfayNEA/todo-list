@@ -279,6 +279,13 @@ export const putAsks = (v) => writeJson('people/asks.json', v);
 export const getSessions = () => readJson('people/sessions.json', []);
 export const putSessions = (v) => writeJson('people/sessions.json', v);
 export const putStickers = (uid, v) => writeJson(stickersPath(uid), v);
+// Polaroids on a shared board: the layout in one file, each photo in its own, so moving a
+// photo doesn't mean sending it again.
+const boardBase = (uid) => (uid === OWNER_UID ? 'board' : `u/${uid}/board`);
+export const getPins = (uid) => readJson(boardBase(uid) + '/pins.json', []);
+export const putPins = (uid, v) => writeJson(boardBase(uid) + '/pins.json', v);
+export const getPhoto = (uid, id) => readJson(boardBase(uid) + '/photos/' + id + '.json', null);
+export const putPhoto = (uid, id, src) => writeJson(boardBase(uid) + '/photos/' + id + '.json', { src });
 
 export async function followerMaySee(viewerUid, targetUid, section) {
   if (viewerUid === targetUid) return true;

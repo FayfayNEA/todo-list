@@ -49,6 +49,10 @@
     position: relative;
     z-index: 1;
   }
+  /* --board-k shrinks or grows everything on the board with the room beside the card.
+     `scale` is its own property, so it stacks with the rotate/hover/drag transforms
+     below instead of replacing them. */
+  .moodboard .sticker, .moodboard .pin { scale: var(--board-k, 1); }
   .moodboard {
     position: fixed;
     inset: 0;
@@ -982,7 +986,7 @@
   body.viewing-shared .tab[data-tab="growth"],
   body.viewing-shared .tab[data-tab="manifesto"],
   body.viewing-shared .tab[data-tab="people"],
-  body.viewing-shared .moodboard .pin,
+  body.viewing-shared .moodboard .pin:not(.other),
   body.viewing-shared .shared-switch,
   body.viewing-shared .group-section,
   body.viewing-shared .tab[data-tab="metrics"],
@@ -1749,7 +1753,7 @@
       <label class="shared-switch in-settings">
         <input type="checkbox" id="profileShowStickers" onchange="saveProfile({ showStickers: this.checked })">
         <span class="switch-track"><span class="switch-knob"></span></span>
-        show my sticker board
+        show my sticker board and polaroids
       </label>
       <div class="setting-note" id="peopleMsg" hidden></div>
     </div>
@@ -1977,7 +1981,7 @@ function renderAuthMode() {
   set('authBlurb', legacy
     ? 'the one you used before accounts existed. it still opens the same checklist.'
     : signup
-      ? 'your own checklist, synced across your devices. you need the invite code from whoever sent you this.'
+      ? 'your own checklist, synced across your devices.'
       : 'sign in to pick your checklist up where you left it.');
   set('authSubmit', legacy ? 'sign in' : signup ? 'create account' : 'sign in');
   set('authSwitch', signup ? 'already have an account? sign in' : 'no account yet? make one');
@@ -1985,7 +1989,7 @@ function renderAuthMode() {
   show('authEmail', !legacy);
   show('authPassword', !legacy);
   show('authKey', legacy);
-  show('authInvite', signup);
+  show('authInvite', signup && !!pendingInvite);
   show('authSwitch', !legacy);
 }
 
@@ -2200,7 +2204,7 @@ async function openSharedBoard(uid, email) {
   viewingUid = uid;
   viewingEmail = email || null;
   notes = []; notesKey = null;
-  otherStickers = [];
+  otherStickers = []; otherPins = [];
   applyViewingChrome();
   await loadAll();
   renderTeam();
@@ -2213,7 +2217,7 @@ async function openMyBoard() {
   viewingUid = null;
   viewingEmail = null;
   notes = []; notesKey = null;
-  otherStickers = [];
+  otherStickers = []; otherPins = [];
   applyViewingChrome();
   await loadAll();
   renderTeam();
@@ -2383,6 +2387,7 @@ async function deleteNote(id) {
 // one copy of "who's around" and redraws the people tab and the shared-mode sections from it.
 let people = { me: { name: '', showDay: false, showStickers: false }, requests: [], followers: [], following: [], asks: [], sessions: [] };
 let otherStickers = [];
+let otherPins = [];
 let openSessions = new Set();
 
 async function peopleFetch(method, body, query) {
@@ -2487,22 +2492,87 @@ function renderPeople() {
 
 async function saveProfile(patch) {
   const body = { ...patch };
-  // Turning the board on sends it, so there's something to see the moment it's shared.
-  if (patch.showStickers) body.stickers = stickerPlacements;
   try {
     const out = await peopleFetch('PUT', body);
     if (!out || !out.ok) { setPeopleMsg((out && out.data.error) || "that didn't save", 'bad'); return; }
     people.me = out.data.me;
     setPeopleMsg('');
     renderPeople();
+    // Turning the board on sends it, so there's something to see the moment it's shared.
+    if (patch.showStickers) sendBoard().catch(() => {});
   } catch (e) { setPeopleMsg("couldn't reach the server", 'bad'); }
 }
 
-let stickerPublishTimer = null;
-function publishStickers() {
-  if (!people.me.showStickers || viewingShared()) return;
-  clearTimeout(stickerPublishTimer);
-  stickerPublishTimer = setTimeout(() => { peopleFetch('PUT', { stickers: stickerPlacements }).catch(() => {}); }, 1500);
+// The board as others see it: stickers, and every polaroid still on it, in the shared
+// reference layout. Each photo goes up once, named by a hash of itself; after that only
+// the layout travels, so dragging a polaroid around doesn't resend it.
+let boardPublishTimer = null;
+function publishBoard() {
+  if (!people.me.showStickers || viewingShared() || !getToken()) return;
+  clearTimeout(boardPublishTimer);
+  boardPublishTimer = setTimeout(() => { sendBoard().catch(() => {}); }, 1500);
+}
+const publishStickers = publishBoard;
+
+function uploadedPhotos() {
+  try { return new Set(JSON.parse(localStorage.getItem(nsKey('uploadedPhotos')) || '[]')); } catch (e) { return new Set(); }
+}
+async function photoId(src) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(src));
+  return [...new Uint8Array(buf)].slice(0, 16).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+// A replaced built-in photo is kept at full size; shrink it for the trip.
+function shrinkDataUrl(src, maxDim) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k));
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      try { resolve(c.toDataURL('image/jpeg', 0.85)); } catch (e) { resolve(src); }
+    };
+    img.onerror = () => resolve(src);
+    img.src = src;
+  });
+}
+
+function currentPolaroids() {
+  const out = [];
+  if (ownersView()) {
+    const hidden = hiddenPins();
+    let positions = {};
+    try { positions = JSON.parse(localStorage.getItem(nsKey(MOODBOARD_POS_KEY)) || '{}'); } catch (e) {}
+    document.querySelectorAll('.moodboard .pin:not(.extra)').forEach(pin => {
+      const pinId = pin.dataset.pinId;
+      const img = pin.querySelector('img');
+      if (!pinId || hidden.has(pinId) || !img || !img.src.startsWith('data:image/')) return;
+      const pos = positions[pinId] && typeof positions[pinId].dx === 'number'
+        ? positions[pinId]
+        : refFromScreen(pin, parseFloat(pin.style.left) || 0, parseFloat(pin.style.top) || 0);
+      out.push({ src: img.src, rot: getComputedStyle(pin).getPropertyValue('--rot').trim() || '0deg', dx: pos.dx, top: pos.top });
+    });
+  }
+  extraPins.forEach(p => out.push({ src: p.src, rot: p.rot, dx: p.dx, top: p.top }));
+  return out;
+}
+
+async function sendBoard() {
+  await peopleFetch('PUT', { stickers: stickerPlacements });
+  const done = uploadedPhotos();
+  const layout = [];
+  for (const p of currentPolaroids()) {
+    const id = await photoId(p.src);
+    if (!done.has(id)) {
+      const src = p.src.length > 1_200_000 ? await shrinkDataUrl(p.src, 900) : p.src;
+      const out = await peopleFetch('PUT', { photo: { id, src } });
+      if (!out || !out.ok) continue;
+      done.add(id);
+      try { localStorage.setItem(nsKey('uploadedPhotos'), JSON.stringify([...done])); } catch (e) {}
+    }
+    layout.push({ photo: id, rot: p.rot, dx: p.dx, top: p.top });
+  }
+  await peopleFetch('PUT', { pins: layout });
 }
 
 async function loadOtherStickers(uid) {
@@ -2510,6 +2580,7 @@ async function loadOtherStickers(uid) {
     const out = await peopleFetch('GET', null, 'stickers=' + encodeURIComponent(uid));
     if (viewingUid !== uid) return;
     otherStickers = out && out.ok ? (out.data.stickers || []) : [];
+    otherPins = out && out.ok ? (out.data.pins || []) : [];
     renderPlacedStickers();
   } catch (e) {}
 }
@@ -2576,6 +2647,40 @@ async function submitAsk() {
   } catch (e) { setNoteMsg("couldn't reach the server", 'bad'); }
 }
 
+// ---------- drafts ----------
+// Anything half-typed into an add box is kept on this device until it's sent, so a tab
+// switch, a reload or a phone killing the page in the background doesn't lose it. It is
+// a draft rather than an entry: a half-written task landing on the list by itself would
+// be worse than waiting for enter.
+const DRAFT_FIELDS = ['dayInput', 'backlogInput', 'growthInput', 'quoteWhoInput', 'manifestoInput',
+  'noteInput', 'askInput', 'sessionTitle'];
+let sessionDrafts = {};
+function draftKey() { return nsKey('drafts') + (viewingUid ? '::board:' + viewingUid : ''); }
+function saveDrafts() {
+  const out = { sessions: sessionDrafts };
+  DRAFT_FIELDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el && el.value) out[id] = el.value;
+  });
+  try { localStorage.setItem(draftKey(), JSON.stringify(out)); } catch (e) {}
+}
+function restoreDrafts() {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(draftKey()) || '{}') || {}; } catch (e) {}
+  sessionDrafts = saved.sessions || {};
+  DRAFT_FIELDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el && !el.value && saved[id]) el.value = saved[id];
+  });
+}
+// Sending clears a box without an input event, so check again just after anything
+// that could have sent it.
+const saveDraftsSoon = () => setTimeout(saveDrafts, 0);
+document.addEventListener('input', (e) => { if (DRAFT_FIELDS.includes(e.target.id)) saveDrafts(); });
+document.addEventListener('click', saveDraftsSoon, true);
+document.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveDraftsSoon(); }, true);
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveDrafts(); });
+
 // ---------- collab sessions ----------
 function groupPeople() {
   const seen = new Map();
@@ -2630,9 +2735,15 @@ function renderSessions() {
       const ta = document.createElement('textarea');
       ta.rows = 2;
       ta.placeholder = 'add a note...';
+      // Re-rendering the sessions shouldn't eat what's half-written in one.
+      ta.value = sessionDrafts[sess.id] || '';
+      ta.oninput = () => { sessionDrafts[sess.id] = ta.value; saveDrafts(); };
       const send = () => {
         const text = ta.value.trim();
-        if (text) sessionAct({ action: 'session_note', id: sess.id, text });
+        if (!text) return;
+        delete sessionDrafts[sess.id];
+        saveDrafts();
+        sessionAct({ action: 'session_note', id: sess.id, text });
       };
       ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } };
       const btn = document.createElement('button');
@@ -3036,6 +3147,9 @@ window.addEventListener('pagehide', flushPush);
 
 async function pushState() {
   pushTimer = null;
+  // Someone else's board is read-only. Loading an empty one used to look like a first
+  // run and try to save a blank list over it; the server refused, but it shouldn't ask.
+  if (viewingShared()) { setSaveStatus('saved'); return; }
   const key = getToken();
   if (!key) { setSaveStatus('offline'); showAuthGate(''); return; }
   pushInFlight = true;
@@ -3757,10 +3871,18 @@ function renderManifesto() {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); text.blur(); }
       if (e.key === 'Escape') { text.textContent = value.text; text.blur(); }
     };
-    text.onblur = () => {
+    // Saved a moment after typing stops, not only when you click away: closing the tab
+    // mid-thought shouldn't cost the thought.
+    let typing = null;
+    const commit = () => {
       const val = (text.innerText || '').trim();
-      if (!val) { text.textContent = value.text; return; }
-      if (val !== value.text) { value.text = val; queuePush(); }
+      if (val && val !== value.text) { value.text = val; queuePush(); }
+    };
+    text.oninput = () => { clearTimeout(typing); typing = setTimeout(commit, 700); };
+    text.onblur = () => {
+      clearTimeout(typing);
+      if (!(text.innerText || '').trim()) { text.textContent = value.text; return; }
+      commit();
     };
 
     const remove = document.createElement('button');
@@ -4389,7 +4511,12 @@ document.getElementById('dayInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitDayInput(); }
 });
 // Shift+enter is a line break, which verse and couplets actually need.
-document.getElementById('profileName').addEventListener('change', (e) => saveProfile({ name: e.target.value }));
+let nameTimer = null;
+document.getElementById('profileName').addEventListener('input', (e) => {
+  clearTimeout(nameTimer);
+  nameTimer = setTimeout(() => saveProfile({ name: e.target.value }), 900);
+});
+document.getElementById('profileName').addEventListener('change', (e) => { clearTimeout(nameTimer); saveProfile({ name: e.target.value }); });
 document.getElementById('profileName').addEventListener('keydown', (e) => { if (e.key === 'Enter') e.target.blur(); });
 document.getElementById('peopleSearch').addEventListener('input', (e) => {
   clearTimeout(searchTimer);
@@ -5033,6 +5160,71 @@ const STICKER_DEFAULT_SPOTS = [
 
 // Lay an item out in the empty band beside the card, so it never sits on the card and
 // stays visible when the margin is narrow. `frac` walks from the card out to the edge.
+// ---------- one board, any window ----------
+// Everything on the board is stored in one reference layout, a 1440x900 window, and
+// drawn into whatever window is actually open. Across, a thing keeps its distance from
+// the card in proportion to how much room there is beside it; down, it keeps its
+// fraction of the height; and it shrinks or grows by the same factor. So the board looks
+// like the same board on a laptop, a big monitor, or someone else's screen, rather than
+// the same pixels piling up against the edges. On a phone the card fills the screen and
+// the art is wallpaper behind it, so there it is simply spread across the width.
+const REF_W = 1440, REF_H = 900, CARD_HALF = 450;
+const REF_MARGIN = REF_W / 2 - CARD_HALF;
+function wallpaperMode() { return window.innerWidth <= 929; }
+function boardK() {
+  if (wallpaperMode()) return 1;
+  const margin = window.innerWidth / 2 - CARD_HALF;
+  return Math.min(1.25, Math.max(0.5, Math.min(margin / REF_MARGIN, window.innerHeight / REF_H)));
+}
+function applyBoardScale() {
+  const board = document.querySelector('.moodboard');
+  if (board) board.style.setProperty('--board-k', boardK().toFixed(3));
+}
+// Centre-x, as an offset from the middle of the reference window, to a screen x.
+function refToScreenCx(cx) {
+  const vw = window.innerWidth, c = vw / 2;
+  if (wallpaperMode()) return vw * (REF_W / 2 + cx) / REF_W;
+  const a = Math.abs(cx);
+  if (a <= CARD_HALF) return c + cx;
+  return c + Math.sign(cx) * (CARD_HALF + (a - CARD_HALF) * (c - CARD_HALF) / REF_MARGIN);
+}
+function screenToRefCx(x) {
+  const vw = window.innerWidth, c = vw / 2;
+  if (wallpaperMode()) return x * REF_W / vw - REF_W / 2;
+  const off = x - c, a = Math.abs(off);
+  if (a <= CARD_HALF) return off;
+  return Math.sign(off) * (CARD_HALF + (a - CARD_HALF) * REF_MARGIN / Math.max(1, c - CARD_HALF));
+}
+// Stored spots are the top-left corner ({dx from the middle, top}); the mapping works on
+// the centre so a thing shrinking in place doesn't also drift.
+function refFromScreenWH(w, h, left, top) {
+  return {
+    dx: Math.round(screenToRefCx(left + w / 2) - w / 2),
+    top: Math.round((top + h / 2) * REF_H / window.innerHeight - h / 2),
+  };
+}
+function refFromScreen(el, left, top) {
+  return refFromScreenWH(el.offsetWidth || 0, el.offsetHeight || 0, left, top);
+}
+function placeFromRef(el, dx, top) {
+  const w = el.offsetWidth || 0, h = el.offsetHeight || 0;
+  const cx = refToScreenCx(dx + w / 2);
+  const cy = (top + h / 2) * window.innerHeight / REF_H;
+  clampIntoView(el, cx - w / 2, cy - h / 2);
+}
+// Boards saved before this were in the pixels of whatever window they were arranged in.
+// Read them as that window, which is the best guess there is, once, on a computer.
+const PIN_W = 114, PIN_H = 156;
+function needsCoordMigration(flagKey) {
+  if (wallpaperMode()) return false;
+  try { return localStorage.getItem(flagKey) !== 'ref1'; } catch (e) { return false; }
+}
+function markCoordMigrated(flagKey) { try { localStorage.setItem(flagKey, 'ref1'); } catch (e) {} }
+function migrateSpot(p, w, h) {
+  const r = refFromScreenWH(w, h, window.innerWidth / 2 + p.dx, p.top);
+  p.dx = r.dx; p.top = r.top;
+}
+
 function marginSpot(side, frac, width) {
   // Everything here is tilted, so its painted box is wider than its layout width and
   // starts slightly before it. Pad generously or it clips the card by a few pixels.
@@ -5104,6 +5296,10 @@ function initStickers() {
     // everywhere else and left them faded on this one. The board is one board now.
     delete p.tab;
   });
+  if (needsCoordMigration('stickerCoords')) {
+    stickerPlacements.forEach(p => migrateSpot(p, p.size, p.size));
+    markCoordMigrated('stickerCoords');
+  }
   saveStickerPlacements();
   renderPlacedStickers();
 }
@@ -5258,18 +5454,31 @@ function attachStickerRotate(el, spin, badge, p) {
 function renderPlacedStickers() {
   const board = document.querySelector('.moodboard');
   if (!board) return;
-  board.querySelectorAll('.sticker').forEach(el => el.remove());
+  board.querySelectorAll('.sticker, .pin.other').forEach(el => el.remove());
 
   // On someone else's board you see their arrangement, to look at rather than rearrange.
   if (viewingShared()) {
+    (otherPins || []).forEach(p => {
+      const pin = document.createElement('div');
+      pin.className = 'pin extra other';
+      pin.style.setProperty('--rot', p.rot);
+      pin.style.pointerEvents = 'none';
+      const img = document.createElement('img');
+      img.src = p.src;
+      img.alt = '';
+      img.draggable = false;
+      pin.appendChild(img);
+      board.appendChild(pin);
+      const settle = () => placeFromRef(pin, p.dx, p.top);
+      settle();
+      if (!img.complete) img.addEventListener('load', settle, { once: true });
+    });
     (otherStickers || []).forEach(p => {
       if (!STICKER_CATALOG.some(s => s[0] === p.name)) return;
       const el = document.createElement('div');
       el.className = 'sticker';
       el.style.setProperty('--rot', p.rot);
       el.style.setProperty('--size', p.size + 'px');
-      el.style.left = Math.round(window.innerWidth / 2 + p.dx) + 'px';
-      el.style.top = p.top + 'px';
       el.style.pointerEvents = 'none';
       const img = document.createElement('img');
       img.src = 'stickers/' + p.name + '.png';
@@ -5277,6 +5486,9 @@ function renderPlacedStickers() {
       img.draggable = false;
       el.appendChild(img);
       board.appendChild(el);
+      const settle = () => placeFromRef(el, p.dx, p.top);
+      settle();
+      if (!img.complete) img.addEventListener('load', settle, { once: true });
     });
     return;
   }
@@ -5287,8 +5499,6 @@ function renderPlacedStickers() {
     el.title = p.name.replace(/-/g, ' ') + ': corner arrows resize and rotate · scroll to resize · double-click to remove';
     el.style.setProperty('--rot', p.rot);
     el.style.setProperty('--size', p.size + 'px');
-    el.style.left = Math.round(window.innerWidth / 2 + p.dx) + 'px';
-    el.style.top = p.top + 'px';
 
     const img = document.createElement('img');
     img.src = 'stickers/' + p.name + '.png';
@@ -5339,8 +5549,7 @@ function renderPlacedStickers() {
           renderPlacedStickers();
           return;
         }
-        p.dx = Math.round(left - window.innerWidth / 2);
-        p.top = top;
+        Object.assign(p, refFromScreen(el, left, top));
         saveStickerPlacements();
       },
     });
@@ -5348,7 +5557,7 @@ function renderPlacedStickers() {
     board.appendChild(el);
     // Display-only clamp: a small window shouldn't strand a sticker offscreen (or push
     // the page wider than the window, which shoves the card sideways). Stored spot survives.
-    const settle = () => clampIntoView(el, window.innerWidth / 2 + p.dx, p.top);
+    const settle = () => placeFromRef(el, p.dx, p.top);
     settle();
     if (!img.complete) img.addEventListener('load', settle, { once: true });
   });
@@ -5364,7 +5573,9 @@ window.addEventListener('resize', () => {
   if (w === boardW && Math.abs(h - boardH) < 140) return;
   boardW = w; boardH = h;
   clearTimeout(stickerResizeTimer);
-  stickerResizeTimer = setTimeout(() => { renderPlacedStickers(); repositionPins(); }, 120);
+  stickerResizeTimer = setTimeout(() => {
+    applyBoardScale(); renderPlacedStickers(); repositionPins(); renderExtraPins();
+  }, 120);
 });
 
 // The tray is only a drop target while the stickers tab is actually showing.
@@ -5476,6 +5687,7 @@ function startTrayDrag(e, name, size) {
 
   const ghost = document.createElement('div');
   ghost.className = 'sticker dragging';
+  ghost.style.scale = String(boardK());      // lands the size it looks while dragging
   ghost.style.position = 'fixed';
   ghost.style.zIndex = '9999';
   ghost.style.pointerEvents = 'none';
@@ -5501,8 +5713,7 @@ function startTrayDrag(e, name, size) {
     const rot = (Math.round(Math.random() * 20) - 10) + 'deg';
     stickerPlacements.push({
       uid: newPlacementId(), name, size, rot,
-      dx: Math.round(ev.clientX - size / 2 - window.innerWidth / 2),
-      top: Math.round(ev.clientY - size / 2),
+      ...refFromScreenWH(size, size, ev.clientX - size / 2, ev.clientY - size / 2),
     });
     saveStickerPlacements();
     renderPlacedStickers();
@@ -5524,6 +5735,8 @@ function applyPinPosition(pin, pos, pinId) {
   if (pos) {
     dx = typeof pos.dx === 'number' ? pos.dx : (pos.left || 0) - window.innerWidth / 2;
     top = typeof pos.top === 'number' ? pos.top : Math.round((pos.ty || 0) * window.innerHeight);
+    placeFromRef(pin, dx, top);
+    return;
   } else {
     const spot = PIN_DEFAULT_SPOTS[pinId];
     if (!spot) return;
@@ -5550,6 +5763,7 @@ let extraPins = [];
 function saveExtraPins() {
   try { localStorage.setItem(nsKey(EXTRA_PINS_KEY), JSON.stringify(extraPins)); }
   catch (e) { alert("couldn't save that photo, the browser's storage for this site is full."); }
+  publishBoard();
 }
 
 function loadExtraPins() {
@@ -5584,14 +5798,13 @@ function renderExtraPins() {
     attachPinDrag(pin, p.uid, {
       onTap: () => openPhotoLightbox(p.uid),
       onMoved: (left, top) => {
-        p.dx = Math.round(left - window.innerWidth / 2);
-        p.top = top;
+        Object.assign(p, refFromScreen(pin, left, top));
         saveExtraPins();
       },
     });
 
     board.appendChild(pin);
-    const settle = () => clampIntoView(pin, window.innerWidth / 2 + p.dx, p.top);
+    const settle = () => placeFromRef(pin, p.dx, p.top);
     settle();
     if (!img.complete) img.addEventListener('load', settle, { once: true });
   });
@@ -5612,8 +5825,8 @@ async function handleAddPolaroid(e) {
   extraPins.push({
     uid: 'x' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     src, rot: (Math.round(Math.random() * 12) - 6) + 'deg',
-    dx: marginSpot(side, 0.35, 114),
-    top: Math.round(window.innerHeight * (0.15 + Math.random() * 0.6)),
+    ...refFromScreenWH(PIN_W, PIN_H, window.innerWidth / 2 + marginSpot(side, 0.35, PIN_W),
+      Math.round(window.innerHeight * (0.15 + Math.random() * 0.6))),
   });
   saveExtraPins();
   renderExtraPins();
@@ -5649,14 +5862,35 @@ function hidePin(pinId) {
   try { localStorage.setItem(nsKey(HIDDEN_PINS_KEY), JSON.stringify([...set])); } catch (e) {}
   const el = findPin(pinId);
   if (el) el.style.display = 'none';
+  publishBoard();
 }
 
 function restoreHiddenPins() {
   try { localStorage.removeItem(nsKey(HIDDEN_PINS_KEY)); } catch (e) {}
   document.querySelectorAll('.moodboard .pin').forEach(p => { p.style.display = ''; });
+  publishBoard();
+}
+
+function migratePinPositions() {
+  const flag = nsKey('pinCoords');
+  if (!needsCoordMigration(flag)) return;
+  // Two keys have held these over time; convert whichever this account has.
+  new Set([MOODBOARD_POS_KEY, nsKey(MOODBOARD_POS_KEY)]).forEach(key => {
+    let positions = null;
+    try { positions = JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) {}
+    if (!positions) return;
+    Object.values(positions).forEach(pos => {
+      if (pos && typeof pos.dx === 'number' && typeof pos.top === 'number') migrateSpot(pos, PIN_W, PIN_H);
+    });
+    try { localStorage.setItem(key, JSON.stringify(positions)); } catch (e) {}
+  });
+  try { extraPins = JSON.parse(localStorage.getItem(nsKey(EXTRA_PINS_KEY))) || []; } catch (e) { extraPins = []; }
+  if (extraPins.length) { extraPins.forEach(p => migrateSpot(p, PIN_W, PIN_H)); saveExtraPins(); }
+  markCoordMigrated(flag);
 }
 
 function loadMoodboardPhotos() {
+  migratePinPositions();
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(nsKey(MOODBOARD_KEY)) || '{}'); } catch (e) {}
   let positions = {};
@@ -5738,8 +5972,9 @@ function attachPinDrag(pin, pinId, opts = {}) {
     if (opts.onMoved) { opts.onMoved(left, top, e); return; }
     let positions = {};
     try { positions = JSON.parse(localStorage.getItem(storageKey) || '{}'); } catch (err) {}
-    positions[pinId] = { dx: Math.round(left - window.innerWidth / 2), top };
+    positions[pinId] = refFromScreen(pin, left, top);
     try { localStorage.setItem(storageKey, JSON.stringify(positions)); } catch (err) {}
+    publishBoard();
   }
 
   pin.addEventListener('pointerup', endDrag);
@@ -5875,6 +6110,7 @@ function handleMoodboardFile(e) {
     try { saved = JSON.parse(localStorage.getItem(nsKey(MOODBOARD_KEY)) || '{}'); } catch (e) {}
     saved[pendingPinId] = dataUrl;
     try { localStorage.setItem(nsKey(MOODBOARD_KEY), JSON.stringify(saved)); } catch (e) {}
+    publishBoard();
   };
   reader.readAsDataURL(file);
 }
@@ -5889,13 +6125,15 @@ if (window.matchMedia('(hover: none)').matches) {
 
 document.getElementById('moodboardFileInput').addEventListener('change', handleMoodboardFile);
 document.getElementById('addPolaroidInput').addEventListener('change', handleAddPolaroid);
+applyBoardScale();
 loadMoodboardPhotos();
 loadExtraPins();
 applyBoardOwnership();
 initStickers();
 renderAccount();
 
-loadAll().then(loadPeople);
+restoreDrafts();
+loadAll().then(loadPeople).then(publishBoard);
 // Record which build this tab is running, so a later check can tell it has fallen behind.
 checkPageVersion();
 </script>

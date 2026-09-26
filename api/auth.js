@@ -39,14 +39,12 @@ export default async function handler(req, res) {
     }
 
     if (action === 'signup') {
-      // Either the shared code or a personal invitation. If neither is set up, there is
-      // no way in at all, which is worth saying differently from a wrong code.
+      // Anyone can make an account. An invitation link still works and is marked used,
+      // but it's no longer the door. SIGNUP_CLOSED=1 shuts it again without a deploy,
+      // leaving invitations as the only way in, which is how this started.
       const invite = await resolveInvite(body.invite);
-      if (!invite && !invitesOpen()) {
-        res.status(503).json({ error: 'new accounts are closed right now' });
-        return;
-      }
-      if (!invite) {
+      if (!invite && process.env.SIGNUP_CLOSED === '1') {
+        if (!invitesOpen()) { res.status(503).json({ error: 'new accounts are closed right now' }); return; }
         res.status(403).json({ error: "that invite code isn't right, or it's already been used" });
         return;
       }
@@ -59,7 +57,7 @@ export default async function handler(req, res) {
         return;
       }
       const user = await createUser(email, password);
-      if (invite.kind === 'personal') await markInviteUsed(invite.code, email);
+      if (invite && invite.kind === 'personal') await markInviteUsed(invite.code, email);
       res.status(200).json(signedIn(user));
       return;
     }

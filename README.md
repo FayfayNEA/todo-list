@@ -6,7 +6,8 @@ the store. Live at **https://checklist-tracker-pi.vercel.app**.
 
 ## Accounts
 
-Anyone with the URL *and* an invite code can make an account. Each account gets its own
+Anyone with the URL can make an account; no invite code is needed. Setting
+`SIGNUP_CLOSED=1` shuts that again, leaving invitations as the only way in. Each account gets its own
 list; nothing is shared between them.
 
 Three environment variables turn accounts on:
@@ -14,7 +15,8 @@ Three environment variables turn accounts on:
 | Variable | What it does |
 |---|---|
 | `AUTH_SECRET` | Signs session and agent tokens. Must be at least 16 characters — until it is, accounts stay switched off and `/api/auth` answers `503`. Never rotate it casually: everyone gets signed out. |
-| `INVITE_CODE` | What someone has to type to create an account. Change it whenever you want to stop handing out new ones; existing accounts are unaffected. |
+| `INVITE_CODE` | Only matters while `SIGNUP_CLOSED=1`: then it's what someone has to type to create an account. |
+| `SIGNUP_CLOSED` | Optional. `1` turns open signup off, so only invitations work. |
 | `OWNER_EMAIL` | The account that inherits the list which predates accounts. Set this **before** signing up with that email. |
 | `APP_SECRET` | The original single passphrase. Still valid, still points at the owner's list, so scripts and bookmarks made before accounts keep working. Safe to remove once nothing uses it. |
 | `RESEND_API_KEY` | Optional. Lets the owner email an invitation instead of copying the link by hand. Without it, invitations are still created — they just aren't delivered. |
@@ -65,7 +67,8 @@ rather than rows in a table, so there's nothing to expire or clean up.
 
 - **No password reset.** There's no mail sending, so a forgotten password means editing
   that account's `users/<hash>.json` out of the blob store by hand.
-- **No rate limiting** on sign-in. The invite code is what keeps signups down; scrypt is
+- **No rate limiting** on sign-in or signup. Signup is open, so if junk accounts show up, set
+  `SIGNUP_CLOSED=1`; scrypt is
   what makes guessing a password slow.
 - **No email verification.** The address is an identifier; the only thing ever sent to it
   is an invitation, and only if mail is configured.

@@ -1,13 +1,14 @@
 import {
   authorize, getProfiles, putProfiles, getFollows, putFollows, getStickers, putStickers,
   followerMaySee, getState, readBody, getAsks, putAsks, getSessions, putSessions, newId,
+  getPins, putPins, getPhoto, putPhoto,
 } from './_lib.js';
 
 // GET  /api/people                     -> your profile, requests, followers, following
 // GET  /api/people?q=name              -> people whose name matches
 // GET  /api/people?group=1&date=       -> the work day of everyone you follow who shows it
 // GET  /api/people?stickers=<uid>      -> someone's sticker board, if they show it to you
-// PUT  /api/people { name?, showDay?, showStickers?, stickers? }
+// PUT  /api/people { name?, showDay?, showStickers?, stickers?, pins?, photo? }
 // POST /api/people { action: follow | unfollow | approve | deny | remove, uid }
 // POST /api/people { action: ask, uid, date, text }          ask to add to their day
 // POST /api/people { action: ask_done, id }                  you added it, or said no
@@ -20,6 +21,10 @@ import {
 // followers they've approved. A search result is a name and nothing else.
 const MAX_NAME = 40;
 const MAX_STICKERS = 200;
+const MAX_PINS = 40;
+const MAX_PHOTO = 1_500_000;                       // characters of data URL
+const PHOTO_ID = /^[a-f0-9]{16,64}$/;
+const PHOTO_SRC = /^data:image\/(jpeg|png|webp|gif);base64,[A-Za-z0-9+/=]+$/;
 
 const nameOf = (profiles, uid, fallback) =>
   (profiles[uid] && profiles[uid].name) || fallback || 'someone';
@@ -94,7 +99,12 @@ export default async function handler(req, res) {
           res.status(403).json({ error: "they haven't shared their stickers with you" });
           return;
         }
-        res.status(200).json({ uid, name: nameOf(profiles, uid), stickers: await getStickers(uid) });
+        const layout = await getPins(uid);
+        const pins = (await Promise.all(layout.map(async (p) => {
+          const photo = await getPhoto(uid, p.photo);
+          return photo && photo.src ? { src: photo.src, rot: p.rot, dx: p.dx, top: p.top } : null;
+        }))).filter(Boolean);
+        res.status(200).json({ uid, name: nameOf(profiles, uid), stickers: await getStickers(uid), pins });
         return;
       }
 
@@ -133,6 +143,17 @@ export default async function handler(req, res) {
       profiles[me] = p;
       await putProfiles(profiles);
       if (Array.isArray(body.stickers)) await putStickers(me, body.stickers.slice(0, MAX_STICKERS));
+      if (body.photo && PHOTO_ID.test(String(body.photo.id || ''))) {
+        const src = String(body.photo.src || '');
+        if (src.length > MAX_PHOTO || !PHOTO_SRC.test(src)) { res.status(400).json({ error: 'that photo is too big or not an image' }); return; }
+        await putPhoto(me, body.photo.id, src);
+      }
+      if (Array.isArray(body.pins)) {
+        const num = (v) => (Number.isFinite(v) ? Math.round(v) : 0);
+        await putPins(me, body.pins.slice(0, MAX_PINS)
+          .filter((p) => p && PHOTO_ID.test(String(p.photo || '')))
+          .map((p) => ({ photo: p.photo, rot: String(p.rot || '0deg').slice(0, 12), dx: num(p.dx), top: num(p.top) })));
+      }
       res.status(200).json({ ok: true, me: { name: p.name || '', showDay: !!p.showDay, showStickers: !!p.showStickers } });
       return;
     }
