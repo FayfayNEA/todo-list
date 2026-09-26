@@ -851,6 +851,75 @@
   .metrics-detail .ln.was-moved .tx { color: var(--muted); }
   body.viewing-shared .checkin, body.viewing-shared .lighten { display: none !important; }
 
+  /* A switch, since "shared mode" is a mode and not an action. */
+  .shared-switch {
+    display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;
+    font-size: 11px; color: var(--muted); letter-spacing: 0.04em; margin: 0 0 4px;
+  }
+  .shared-switch.in-settings { display: flex; margin: 10px 0 0; }
+  .shared-switch input { position: absolute; opacity: 0; pointer-events: none; }
+  .switch-track {
+    position: relative; width: 28px; height: 16px; border-radius: 10px; flex-shrink: 0;
+    background: var(--border-light); border: 1px solid var(--border); transition: background 0.18s ease;
+  }
+  .switch-knob {
+    position: absolute; top: 1px; left: 1px; width: 12px; height: 12px; border-radius: 50%;
+    background: var(--card); box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+    transition: transform 0.2s cubic-bezier(.2,.8,.3,1.3);
+  }
+  .shared-switch input:checked + .switch-track { background: var(--btn-blue); border-color: var(--btn-blue); }
+  .shared-switch input:checked + .switch-track .switch-knob { transform: translateX(12px); }
+  .shared-switch input:focus-visible + .switch-track { outline: 2px solid var(--btn-blue); outline-offset: 2px; }
+  .shared-switch:hover { color: var(--text); }
+
+  .group-section[hidden] { display: none; }
+  .group-person {
+    background: var(--card); border: 1px solid var(--border-light); border-radius: 8px;
+    padding: 10px 12px; margin-bottom: 8px; animation: taskIn 0.28s cubic-bezier(.22,.9,.32,1);
+  }
+  .group-person .who {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+    font-size: 12px; font-weight: 600; margin-bottom: 6px;
+  }
+  .group-person .who .count { font-weight: 400; font-size: 10px; color: var(--muted); }
+  .group-person .ln { display: flex; gap: 8px; font-size: 12px; line-height: 1.45; padding: 2px 0; }
+  .group-person .ln .mk { width: 12px; flex-shrink: 0; color: var(--border); }
+  .group-person .ln.is-done .mk { color: var(--done); }
+  .group-person .ln.is-done .tx { text-decoration: line-through; color: var(--muted); }
+  .group-person .quiet { font-size: 11px; color: var(--muted); }
+
+  .person-row .invite-act + .invite-act { margin-left: 4px; }
+  .ask-text { color: var(--text); }
+  .session-new { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+  .session-new button { align-self: flex-start; }
+  #sessionPick { display: flex; flex-wrap: wrap; gap: 6px; }
+  #sessionPick label {
+    font-size: 11px; padding: 3px 9px; border: 1px solid var(--border-light); border-radius: 20px;
+    cursor: pointer; color: var(--muted);
+  }
+  #sessionPick input { display: none; }
+  #sessionPick label:has(input:checked) { color: var(--text); border-color: var(--btn-blue); background: var(--highlight); }
+  .session {
+    border: 1px solid var(--border-light); border-radius: 8px; background: var(--card);
+    margin-top: 8px; overflow: hidden;
+  }
+  .session-head {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+    padding: 10px 12px; cursor: pointer; font-size: 12px;
+  }
+  .session-head .members { font-size: 10px; color: var(--muted); }
+  .session-body { padding: 0 12px 12px; border-top: 1px solid var(--border-light); }
+  .session-note { position: relative; padding: 8px 22px 8px 0; border-bottom: 1px solid var(--border-light); font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
+  .session-note .by { font-size: 10px; color: var(--muted); margin-top: 2px; white-space: normal; }
+  .session-note .remove { position: absolute; right: 0; top: 6px; }
+  .session-write { display: flex; gap: 8px; align-items: flex-end; margin-top: 10px; }
+  .session-write textarea {
+    flex: 1; min-width: 0; resize: vertical; font: inherit; font-size: 12px; padding: 8px 10px;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--text); outline: none;
+  }
+  .session-write textarea:focus { border-color: var(--btn-blue); }
+  .session-leave { font-size: 10px; margin-top: 8px; }
+
   .setting-group { padding: 4px 0 16px; border-bottom: 1px solid var(--border-light); margin-bottom: 16px; }
   .setting-group:last-child { border-bottom: none; margin-bottom: 4px; }
   .setting-title {
@@ -912,6 +981,10 @@
   body.viewing-shared #backlogEmptyPersonal,
   body.viewing-shared .tab[data-tab="growth"],
   body.viewing-shared .tab[data-tab="manifesto"],
+  body.viewing-shared .tab[data-tab="people"],
+  body.viewing-shared .moodboard .pin,
+  body.viewing-shared .shared-switch,
+  body.viewing-shared .group-section,
   body.viewing-shared .tab[data-tab="metrics"],
   body.viewing-shared #newItemCategory,
   body.viewing-shared #newBacklogCategory,
@@ -1417,6 +1490,7 @@
     <div class="tab" data-tab="manifesto" onclick="switchTab('manifesto')">manifesto</div>
     <div class="tab" data-tab="stickers" onclick="switchTab('stickers')">stickers</div>
     <div class="tab" data-tab="metrics" onclick="switchTab('metrics')">Metrics</div>
+    <div class="tab" data-tab="people" onclick="switchTab('people')">people</div>
     <div class="tab tab-settings" data-tab="settings" onclick="switchTab('settings')"
          title="settings" role="button" aria-label="settings">
       <svg class="tab-icon" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
@@ -1465,6 +1539,11 @@
       </select>
       <button onclick="submitDayInput()">add</button>
     </div>
+    <label class="shared-switch" title="see what your group has on for work today">
+      <input type="checkbox" id="sharedModeDay" onchange="setSharedMode(this.checked)">
+      <span class="switch-track"><span class="switch-knob"></span></span>
+      shared mode
+    </label>
     <div class="section-heading work" data-reorder="work">work</div>
     <ul id="dayListWork" data-reorder="work"></ul>
     <div class="empty" id="dayEmptyWork" data-reorder="work" style="display:none;">nothing here</div>
@@ -1477,6 +1556,9 @@
     <div class="completed-toggle" id="completedTogglePersonal" style="display:none;" onclick="toggleCompleted('personal')"></div>
     <ul id="dayListPersonalDone" style="display:none;"></ul>
 
+    <!-- Shared mode: the work day of everyone in your group, read-only, beside your own. -->
+    <div class="group-section" id="groupDay" hidden></div>
+
     <!-- What other people would change about this day. Suggestions sitting beside the
          list, never edits to it. -->
     <div id="dayNotes" hidden>
@@ -1485,6 +1567,10 @@
       <div class="note-add" id="noteAdd" hidden>
         <textarea id="noteInput" rows="2" placeholder="suggest a change to this day..."></textarea>
         <button class="tray-reset" onclick="submitNote()">leave note</button>
+      </div>
+      <div class="note-add" id="askAdd" hidden>
+        <textarea id="askInput" rows="1" placeholder="ask them to add something to this day..."></textarea>
+        <button class="tray-reset" onclick="submitAsk()">ask</button>
       </div>
       <div class="setting-note" id="noteMsg" hidden></div>
     </div>
@@ -1516,6 +1602,13 @@
     <div class="section-heading personal" data-reorder="personal">personal</div>
     <ul id="backlogListPersonal" data-reorder="personal"></ul>
     <div class="empty" id="backlogEmptyPersonal" data-reorder="personal" style="display:none;">backlog is empty</div>
+
+    <label class="shared-switch">
+      <input type="checkbox" id="sharedModeBacklog" onchange="setSharedMode(this.checked)">
+      <span class="switch-track"><span class="switch-knob"></span></span>
+      shared mode
+    </label>
+    <div class="group-section" id="groupBacklog" hidden></div>
   </div>
 
   <!-- GROWTH VIEW: ideas and quotes, one tab, a section each -->
@@ -1633,6 +1726,65 @@
       <div class="setting-note" id="apiTokenNone" hidden>
         not available while signed in with the old shared passphrase, so make an account to get one.
       </div>
+    </div>
+  </div>
+
+  <!-- PEOPLE VIEW: your profile, who you follow, who follows you, and collab sessions -->
+  <div id="peopleView" class="tab-panel" style="display:none;">
+    <div class="setting-group">
+      <div class="setting-title">your profile</div>
+      <div class="setting-note">
+        people find you by this name, ask to follow, and see only what you switch on below,
+        and only once you've said yes to them. work only: your personal half never shows.
+      </div>
+      <div class="setting-row">
+        <input class="quote-who-input" id="profileName" placeholder="your name, so people can find you"
+               autocomplete="off" spellcheck="false" maxlength="40">
+      </div>
+      <label class="shared-switch in-settings">
+        <input type="checkbox" id="profileShowDay" onchange="saveProfile({ showDay: this.checked })">
+        <span class="switch-track"><span class="switch-knob"></span></span>
+        show my work day and backlog
+      </label>
+      <label class="shared-switch in-settings">
+        <input type="checkbox" id="profileShowStickers" onchange="saveProfile({ showStickers: this.checked })">
+        <span class="switch-track"><span class="switch-knob"></span></span>
+        show my sticker board
+      </label>
+      <div class="setting-note" id="peopleMsg" hidden></div>
+    </div>
+
+    <div class="setting-group" id="peopleInbox" hidden>
+      <div class="setting-title">waiting on you</div>
+      <div id="followRequests"></div>
+      <div id="askList"></div>
+    </div>
+
+    <div class="setting-group">
+      <div class="setting-title">find people</div>
+      <div class="setting-row">
+        <input class="quote-who-input" id="peopleSearch" placeholder="search by name"
+               autocomplete="off" spellcheck="false">
+      </div>
+      <div id="peopleResults"></div>
+    </div>
+
+    <div class="setting-group">
+      <div class="setting-title">collab sessions</div>
+      <div class="setting-note">a page of notes shared with people in your group, for working something out together.</div>
+      <div id="sessionList"></div>
+      <div class="session-new" id="sessionNew">
+        <input class="quote-who-input" id="sessionTitle" placeholder="what's it about?" maxlength="80" autocomplete="off">
+        <div id="sessionPick"></div>
+        <button class="tray-reset" onclick="createSession()">start a session</button>
+      </div>
+    </div>
+
+    <div class="setting-group">
+      <div class="setting-title">following</div>
+      <div id="followingList"></div>
+      <div class="setting-subtitle" id="followersTitle" hidden>following you</div>
+      <div id="followersList"></div>
     </div>
   </div>
 
@@ -2048,10 +2200,12 @@ async function openSharedBoard(uid, email) {
   viewingUid = uid;
   viewingEmail = email || null;
   notes = []; notesKey = null;
+  otherStickers = [];
   applyViewingChrome();
   await loadAll();
   renderTeam();
   switchTab('day');
+  loadOtherStickers(uid);
 }
 
 async function openMyBoard() {
@@ -2059,9 +2213,11 @@ async function openMyBoard() {
   viewingUid = null;
   viewingEmail = null;
   notes = []; notesKey = null;
+  otherStickers = [];
   applyViewingChrome();
   await loadAll();
   renderTeam();
+  renderPlacedStickers();
 }
 
 function applyViewingChrome() {
@@ -2139,6 +2295,7 @@ function renderNotes() {
   // On your own day the section is only worth the space once somebody has said something.
   wrap.hidden = !guest && notes.length === 0;
   add.hidden = !guest;
+  document.getElementById('askAdd').hidden = !guest;
   title.textContent = guest ? 'notes' : 'notes from others';
 
   list.innerHTML = '';
@@ -2219,6 +2376,408 @@ async function deleteNote(id) {
   } catch (e) {
     setNoteMsg("couldn't reach the server", 'bad');
   }
+}
+
+// ---------- people ----------
+// Profiles, follows, asks and collab sessions all live behind /api/people. The page keeps
+// one copy of "who's around" and redraws the people tab and the shared-mode sections from it.
+let people = { me: { name: '', showDay: false, showStickers: false }, requests: [], followers: [], following: [], asks: [], sessions: [] };
+let otherStickers = [];
+let openSessions = new Set();
+
+async function peopleFetch(method, body, query) {
+  const key = getToken();
+  if (!key) return null;
+  const res = await fetch('/api/people' + (query ? '?' + query : ''), {
+    method,
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  return { ok: res.ok, data };
+}
+
+function setPeopleMsg(msg, tone) {
+  const el = document.getElementById('peopleMsg');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.hidden = !msg;
+  el.className = 'setting-note' + (tone ? ' ' + tone : '');
+}
+
+async function loadPeople() {
+  if (viewingShared()) return;
+  try {
+    const out = await peopleFetch('GET');
+    if (!out || !out.ok) return;
+    people = { ...people, ...out.data };
+    renderPeople();
+  } catch (e) {}
+}
+
+function personRow(name, actions, extra) {
+  const row = document.createElement('div');
+  row.className = 'invite-row person-row';
+  const who = document.createElement('span');
+  who.className = 'invite-for';
+  who.textContent = name;
+  if (extra) {
+    const x = document.createElement('span');
+    x.className = 'ask-text';
+    x.textContent = extra;
+    who.append(': ', x);
+  }
+  row.appendChild(who);
+  actions.forEach(([label, fn]) => {
+    const a = document.createElement('span');
+    a.className = 'invite-act';
+    a.textContent = label;
+    if (fn) a.onclick = fn; else a.style.cursor = 'default';
+    row.appendChild(a);
+  });
+  return row;
+}
+
+function renderPeople() {
+  const nameEl = document.getElementById('profileName');
+  if (nameEl && document.activeElement !== nameEl) nameEl.value = people.me.name || '';
+  document.getElementById('profileShowDay').checked = !!people.me.showDay;
+  document.getElementById('profileShowStickers').checked = !!people.me.showStickers;
+
+  const reqs = document.getElementById('followRequests');
+  const asks = document.getElementById('askList');
+  reqs.innerHTML = ''; asks.innerHTML = '';
+  people.requests.forEach(p => reqs.appendChild(personRow(p.name + ' wants to follow you', [
+    ['yes', () => peopleAct('approve', p.uid)],
+    ['no', () => peopleAct('deny', p.uid)],
+  ])));
+  people.asks.forEach(a => {
+    const when = new Date(a.date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).toLowerCase();
+    asks.appendChild(personRow(a.fromName + ' asked to add, for ' + when, [
+      ['add it', () => acceptAsk(a)],
+      ['no', () => finishAsk(a.id)],
+    ], a.text));
+  });
+  document.getElementById('peopleInbox').hidden = !people.requests.length && !people.asks.length;
+
+  const following = document.getElementById('followingList');
+  following.innerHTML = '';
+  if (!people.following.length) {
+    const none = document.createElement('div');
+    none.className = 'setting-note';
+    none.textContent = 'no one yet. find someone above.';
+    following.appendChild(none);
+  }
+  people.following.forEach(p => {
+    const acts = [];
+    if (p.status === 'pending') acts.push(['asked', null]);
+    else if (p.showDay || p.showStickers) acts.push(['open their board', () => openSharedBoard(p.uid, p.name)]);
+    else acts.push(["hasn't shared anything", null]);
+    acts.push(['unfollow', () => peopleAct('unfollow', p.uid)]);
+    following.appendChild(personRow(p.name, acts));
+  });
+
+  const followers = document.getElementById('followersList');
+  followers.innerHTML = '';
+  document.getElementById('followersTitle').hidden = !people.followers.length;
+  people.followers.forEach(p => followers.appendChild(personRow(p.name, [['remove', () => peopleAct('remove', p.uid)]])));
+
+  renderSessions();
+}
+
+async function saveProfile(patch) {
+  const body = { ...patch };
+  // Turning the board on sends it, so there's something to see the moment it's shared.
+  if (patch.showStickers) body.stickers = stickerPlacements;
+  try {
+    const out = await peopleFetch('PUT', body);
+    if (!out || !out.ok) { setPeopleMsg((out && out.data.error) || "that didn't save", 'bad'); return; }
+    people.me = out.data.me;
+    setPeopleMsg('');
+    renderPeople();
+  } catch (e) { setPeopleMsg("couldn't reach the server", 'bad'); }
+}
+
+let stickerPublishTimer = null;
+function publishStickers() {
+  if (!people.me.showStickers || viewingShared()) return;
+  clearTimeout(stickerPublishTimer);
+  stickerPublishTimer = setTimeout(() => { peopleFetch('PUT', { stickers: stickerPlacements }).catch(() => {}); }, 1500);
+}
+
+async function loadOtherStickers(uid) {
+  try {
+    const out = await peopleFetch('GET', null, 'stickers=' + encodeURIComponent(uid));
+    if (viewingUid !== uid) return;
+    otherStickers = out && out.ok ? (out.data.stickers || []) : [];
+    renderPlacedStickers();
+  } catch (e) {}
+}
+
+async function peopleAct(action, uid) {
+  try {
+    const out = await peopleFetch('POST', { action, uid });
+    if (!out || !out.ok) { setPeopleMsg((out && out.data.error) || "that didn't work", 'bad'); return; }
+    await loadPeople();
+    if (lastSearch) runSearch(lastSearch);
+  } catch (e) { setPeopleMsg("couldn't reach the server", 'bad'); }
+}
+
+let lastSearch = '';
+let searchTimer = null;
+async function runSearch(term) {
+  lastSearch = term;
+  const box = document.getElementById('peopleResults');
+  if (term.trim().length < 2) { box.innerHTML = ''; return; }
+  try {
+    const out = await peopleFetch('GET', null, 'q=' + encodeURIComponent(term.trim()));
+    if (!out || !out.ok || term !== lastSearch) return;
+    box.innerHTML = '';
+    if (!out.data.results.length) {
+      const none = document.createElement('div');
+      none.className = 'setting-note';
+      none.textContent = 'no one by that name';
+      box.appendChild(none);
+    }
+    out.data.results.forEach(r => {
+      const act = r.status === 'approved' ? ['following', null]
+        : r.status === 'pending' ? ['asked', null]
+        : ['ask to follow', () => peopleAct('follow', r.uid)];
+      box.appendChild(personRow(r.name, [act]));
+    });
+  } catch (e) {}
+}
+
+// Asks are added by this page's own save, the same way anything typed is, so a list open
+// in another tab can't later overwrite a task written behind its back.
+async function acceptAsk(a) {
+  ensureDay(a.date);
+  daysMap[a.date].push(mk(a.text, 'work'));
+  saveDays();
+  renderDateStrip();
+  if (a.date === currentDate) renderDay();
+  await finishAsk(a.id);
+}
+async function finishAsk(id) {
+  people.asks = people.asks.filter(x => x.id !== id);
+  renderPeople();
+  try { await peopleFetch('POST', { action: 'ask_done', id }); } catch (e) {}
+}
+
+async function submitAsk() {
+  const input = document.getElementById('askInput');
+  const text = (input.value || '').trim();
+  if (!text) { input.focus(); return; }
+  try {
+    const out = await peopleFetch('POST', { action: 'ask', uid: viewingUid, date: currentDate, text });
+    if (!out || !out.ok) { setNoteMsg((out && out.data.error) || "that didn't send", 'bad'); return; }
+    input.value = '';
+    setNoteMsg('asked. it lands on their day when they say yes.', 'good');
+  } catch (e) { setNoteMsg("couldn't reach the server", 'bad'); }
+}
+
+// ---------- collab sessions ----------
+function groupPeople() {
+  const seen = new Map();
+  people.following.filter(p => p.status === 'approved').forEach(p => seen.set(p.uid, p.name));
+  people.followers.forEach(p => seen.set(p.uid, p.name));
+  return [...seen.entries()].map(([uid, name]) => ({ uid, name }));
+}
+
+function renderSessions() {
+  const list = document.getElementById('sessionList');
+  const pick = document.getElementById('sessionPick');
+  list.innerHTML = '';
+  people.sessions.slice().reverse().forEach(sess => {
+    const box = document.createElement('div');
+    box.className = 'session';
+    const head = document.createElement('div');
+    head.className = 'session-head';
+    const title = document.createElement('span');
+    title.textContent = (openSessions.has(sess.id) ? '▾ ' : '▸ ') + sess.title;
+    const members = document.createElement('span');
+    members.className = 'members';
+    members.textContent = sess.memberNames.join(', ') + ' · ' + sess.notes.length + (sess.notes.length === 1 ? ' note' : ' notes');
+    head.append(title, members);
+    head.onclick = () => {
+      if (openSessions.has(sess.id)) openSessions.delete(sess.id); else openSessions.add(sess.id);
+      renderSessions();
+    };
+    box.appendChild(head);
+
+    if (openSessions.has(sess.id)) {
+      const body = document.createElement('div');
+      body.className = 'session-body';
+      sess.notes.forEach(n => {
+        const row = document.createElement('div');
+        row.className = 'session-note';
+        row.textContent = n.text;
+        const by = document.createElement('div');
+        by.className = 'by';
+        by.textContent = n.byName + ' · ' + shortWhen(n.at);
+        row.appendChild(by);
+        if (n.mine) {
+          const del = document.createElement('button');
+          del.className = 'remove';
+          del.textContent = '×';
+          del.onclick = () => sessionAct({ action: 'session_unnote', id: sess.id, noteId: n.id });
+          row.appendChild(del);
+        }
+        body.appendChild(row);
+      });
+      const write = document.createElement('div');
+      write.className = 'session-write';
+      const ta = document.createElement('textarea');
+      ta.rows = 2;
+      ta.placeholder = 'add a note...';
+      const send = () => {
+        const text = ta.value.trim();
+        if (text) sessionAct({ action: 'session_note', id: sess.id, text });
+      };
+      ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } };
+      const btn = document.createElement('button');
+      btn.className = 'tray-reset';
+      btn.textContent = 'add';
+      btn.onclick = send;
+      write.append(ta, btn);
+      body.appendChild(write);
+      const leave = document.createElement('div');
+      leave.className = 'invite-act session-leave';
+      leave.textContent = 'leave this session';
+      leave.onclick = () => sessionAct({ action: 'session_leave', id: sess.id });
+      body.appendChild(leave);
+      box.appendChild(body);
+    }
+    list.appendChild(box);
+  });
+
+  const group = groupPeople();
+  document.getElementById('sessionNew').hidden = !group.length;
+  const chosen = new Set([...pick.querySelectorAll('input:checked')].map(i => i.value));
+  pick.innerHTML = '';
+  group.forEach(p => {
+    const label = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = p.uid;
+    cb.checked = chosen.has(p.uid);
+    label.append(cb, p.name);
+    pick.appendChild(label);
+  });
+}
+
+async function sessionAct(body) {
+  try {
+    const out = await peopleFetch('POST', body);
+    if (!out || !out.ok) { setPeopleMsg((out && out.data.error) || "that didn't work", 'bad'); return; }
+    await loadPeople();
+  } catch (e) { setPeopleMsg("couldn't reach the server", 'bad'); }
+}
+
+async function createSession() {
+  const title = document.getElementById('sessionTitle');
+  const uids = [...document.querySelectorAll('#sessionPick input:checked')].map(i => i.value);
+  if (!uids.length) { setPeopleMsg('pick at least one person for the session', 'bad'); return; }
+  try {
+    const out = await peopleFetch('POST', { action: 'session_new', title: title.value, uids });
+    if (!out || !out.ok) { setPeopleMsg((out && out.data.error) || "that didn't work", 'bad'); return; }
+    title.value = '';
+    document.querySelectorAll('#sessionPick input').forEach(i => { i.checked = false; });
+    openSessions.add(out.data.id);
+    await loadPeople();
+  } catch (e) { setPeopleMsg("couldn't reach the server", 'bad'); }
+}
+
+// ---------- shared mode ----------
+// A switch on the day and the backlog: the work of everyone you follow, read-only, under
+// your own. A per-device preference, so it's kept in this browser rather than the account.
+let sharedMode = false;
+try { sharedMode = localStorage.getItem('sharedMode') === '1'; } catch (e) {}
+let groupCache = { key: null, data: null, at: 0 };
+
+function setSharedMode(on) {
+  sharedMode = !!on;
+  try { localStorage.setItem('sharedMode', sharedMode ? '1' : '0'); } catch (e) {}
+  groupCache.at = 0;
+  renderGroup();
+}
+
+async function renderGroup() {
+  ['sharedModeDay', 'sharedModeBacklog'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.checked = sharedMode;
+  });
+  const dayBox = document.getElementById('groupDay');
+  const backBox = document.getElementById('groupBacklog');
+  if (!dayBox || !backBox) return;
+  if (!sharedMode || viewingShared() || !getToken()) { dayBox.hidden = true; backBox.hidden = true; return; }
+
+  const key = currentDate;
+  // Fetched once a minute per day at most: a re-render for a tick shouldn't mean a request.
+  if (groupCache.key !== key || Date.now() - groupCache.at > 60000) {
+    groupCache = { key, data: groupCache.key === key ? groupCache.data : null, at: Date.now() };
+    try {
+      const out = await peopleFetch('GET', null, 'group=1&date=' + encodeURIComponent(key));
+      if (out && out.ok && groupCache.key === key) groupCache.data = out.data.group || [];
+    } catch (e) {}
+    if (groupCache.key !== currentDate) return;
+  }
+  const group = groupCache.data || [];
+  fillGroup(dayBox, group, 'your group today', p => p.tasks, 'nothing on for work');
+  fillGroup(backBox, group, "your group's backlogs", p => p.backlog, 'backlog is empty');
+}
+
+function fillGroup(box, group, heading, pick, emptyWord) {
+  box.innerHTML = '';
+  box.hidden = false;
+  const h = document.createElement('div');
+  h.className = 'section-heading';
+  h.textContent = heading;
+  box.appendChild(h);
+  if (!group.length) {
+    const none = document.createElement('div');
+    none.className = 'empty';
+    none.textContent = 'no one yet. follow people on the people tab, and once they say yes and share their day, it shows here.';
+    box.appendChild(none);
+    return;
+  }
+  group.forEach(p => {
+    const items = pick(p) || [];
+    const card = document.createElement('div');
+    card.className = 'group-person';
+    const who = document.createElement('div');
+    who.className = 'who';
+    const name = document.createElement('span');
+    name.className = 'invite-act';
+    name.textContent = p.name;
+    name.title = 'open their board';
+    name.onclick = () => openSharedBoard(p.uid, p.name);
+    const count = document.createElement('span');
+    count.className = 'count';
+    const done = items.filter(t => t.done).length;
+    count.textContent = items.length ? (items[0].done !== undefined ? done + '/' + items.length : items.length + '') : '';
+    who.append(name, count);
+    card.appendChild(who);
+    if (!items.length) {
+      const q = document.createElement('div');
+      q.className = 'quiet';
+      q.textContent = emptyWord;
+      card.appendChild(q);
+    }
+    items.forEach(t => {
+      const ln = document.createElement('div');
+      ln.className = 'ln' + (t.done ? ' is-done' : '');
+      const mkEl = document.createElement('span');
+      mkEl.className = 'mk';
+      mkEl.textContent = t.done ? '✓' : '·';
+      const tx = document.createElement('span');
+      tx.className = 'tx';
+      tx.textContent = t.text;
+      ln.append(mkEl, tx);
+      card.appendChild(ln);
+    });
+    box.appendChild(card);
+  });
 }
 
 // ---------- inviting people ----------
@@ -2719,6 +3278,7 @@ const TAB_PANELS = {
   manifesto: 'manifestoView',
   stickers: 'stickersView',
   metrics: 'metricsView',
+  people: 'peopleView',
   settings: 'settingsView',
 };
 
@@ -2740,6 +3300,7 @@ function switchTab(tab) {
   if (tab === 'metrics') renderMetrics();
   if (tab === 'growth') { renderIdeas(); renderQuotes(); }
   if (tab === 'manifesto') renderManifesto();
+  if (tab === 'people') loadPeople();
   if (tab === 'stickers') renderStickerTray();
   if (tab === 'backlog') { renderDateStrip(); renderBacklog(); }
   if (tab === 'settings') { renderAccount(); loadInvites(); loadTeam(); }
@@ -3828,6 +4389,16 @@ document.getElementById('dayInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitDayInput(); }
 });
 // Shift+enter is a line break, which verse and couplets actually need.
+document.getElementById('profileName').addEventListener('change', (e) => saveProfile({ name: e.target.value }));
+document.getElementById('profileName').addEventListener('keydown', (e) => { if (e.key === 'Enter') e.target.blur(); });
+document.getElementById('peopleSearch').addEventListener('input', (e) => {
+  clearTimeout(searchTimer);
+  const term = e.target.value;
+  searchTimer = setTimeout(() => runSearch(term), 250);
+});
+document.getElementById('askInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitAsk(); }
+});
 document.getElementById('manifestoInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitManifestoInput(); }
 });
@@ -4113,6 +4684,7 @@ function renderDay() {
   // say it didn't happen, but it isn't shown there as something still to do.
   const items = daysMap[currentDate].filter(i => !i.movedTo);
   renderCheckin();
+  renderGroup();
 
   ['work', 'personal'].forEach(category => {
     const suffix = category === 'work' ? 'Work' : 'Personal';
@@ -4225,6 +4797,7 @@ function renderBacklog() {
 
   workItems.forEach(item => workList.appendChild(buildBacklogLi(item)));
   personalItems.forEach(item => personalList.appendChild(buildBacklogLi(item)));
+  renderGroup();
 }
 function removeBacklogItem(id) {
   backlog = backlog.filter(i => i.id !== id);
@@ -4491,6 +5064,7 @@ function newPlacementId() {
 
 function saveStickerPlacements() {
   try { localStorage.setItem(STICKER_PLACE_KEY, JSON.stringify(stickerPlacements)); } catch (e) {}
+  publishStickers();
 }
 
 // A fresh board starts bare. Opening this for the first time and finding thirty-one
@@ -4685,6 +5259,27 @@ function renderPlacedStickers() {
   const board = document.querySelector('.moodboard');
   if (!board) return;
   board.querySelectorAll('.sticker').forEach(el => el.remove());
+
+  // On someone else's board you see their arrangement, to look at rather than rearrange.
+  if (viewingShared()) {
+    (otherStickers || []).forEach(p => {
+      if (!STICKER_CATALOG.some(s => s[0] === p.name)) return;
+      const el = document.createElement('div');
+      el.className = 'sticker';
+      el.style.setProperty('--rot', p.rot);
+      el.style.setProperty('--size', p.size + 'px');
+      el.style.left = Math.round(window.innerWidth / 2 + p.dx) + 'px';
+      el.style.top = p.top + 'px';
+      el.style.pointerEvents = 'none';
+      const img = document.createElement('img');
+      img.src = 'stickers/' + p.name + '.png';
+      img.alt = '';
+      img.draggable = false;
+      el.appendChild(img);
+      board.appendChild(el);
+    });
+    return;
+  }
 
   stickerPlacements.forEach(p => {
     const el = document.createElement('div');
@@ -5300,7 +5895,7 @@ applyBoardOwnership();
 initStickers();
 renderAccount();
 
-loadAll();
+loadAll().then(loadPeople);
 // Record which build this tab is running, so a later check can tell it has fallen behind.
 checkPageVersion();
 </script>

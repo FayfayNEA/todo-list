@@ -249,11 +249,42 @@ export async function sharedByMe(auth) {
     .map((s) => ({ email: s.granteeEmail, createdAt: s.createdAt }));
 }
 
-// The original passphrase carries no email, so it can only ever open its own board:
-// there is no identity on it for a grant to have been made to.
+// Two ways in to someone else's board: they handed it to your address, or you follow
+// them, they said yes, and they've switched on showing their work day. Either way it is
+// the same read-only work half, filtered below.
 export async function mayOpen(auth, targetUid) {
   if (!targetUid || targetUid === auth.userId) return true;
-  return (await sharedWithMe(auth)).some((s) => s.uid === targetUid);
+  if ((await sharedWithMe(auth)).some((s) => s.uid === targetUid)) return true;
+  return followerMaySee(auth.userId, targetUid, 'showDay');
+}
+
+// ---------- people ----------
+// A profile is a name and two switches, both off until turned on. Follows are asked for
+// by the follower and only count once the other person approves; revoking is theirs too.
+// Keyed by account id rather than email, so the original passphrase, which has an id and
+// no address, can take part like anyone else.
+const PROFILES = 'people/profiles.json';
+const FOLLOWS = 'people/follows.json';
+const stickersPath = (uid) => (uid === OWNER_UID ? 'stickers.json' : `u/${uid}/stickers.json`);
+
+export const getProfiles = () => readJson(PROFILES, {});
+export const putProfiles = (v) => writeJson(PROFILES, v);
+export const getFollows = () => readJson(FOLLOWS, []);
+export const putFollows = (v) => writeJson(FOLLOWS, v);
+export const getStickers = (uid) => readJson(stickersPath(uid), []);
+// Asks: someone who can see your day asking for something to be added to it.
+export const getAsks = () => readJson('people/asks.json', []);
+export const putAsks = (v) => writeJson('people/asks.json', v);
+// Collab sessions: a shared page of notes between people in each other's group.
+export const getSessions = () => readJson('people/sessions.json', []);
+export const putSessions = (v) => writeJson('people/sessions.json', v);
+export const putStickers = (uid, v) => writeJson(stickersPath(uid), v);
+
+export async function followerMaySee(viewerUid, targetUid, section) {
+  if (viewerUid === targetUid) return true;
+  const profile = (await getProfiles())[targetUid];
+  if (!profile || !profile[section]) return false;
+  return (await getFollows()).some((f) => f.from === viewerUid && f.to === targetUid && f.status === 'approved');
 }
 
 const isWork = (item) => !item || item.category !== 'personal';

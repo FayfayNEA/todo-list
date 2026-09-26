@@ -1,6 +1,6 @@
 import {
   authorize, accountFor, getState, putState, getInbox, putInbox, newId, readBody,
-  mayOpen, workOnly,
+  mayOpen, workOnly, followerMaySee,
 } from './_lib.js';
 
 // GET  /api/sync[?uid=]  -> drains the agent inbox into the day map, returns the whole state
@@ -36,9 +36,16 @@ export default async function handler(req, res) {
   const asked = (req.query && (req.query.uid || req.query.u)) || '';
   const uid = asked ? String(asked) : auth.userId;
   const guest = uid !== auth.userId;
-  if (guest && !(await mayOpen(auth, uid))) {
+  // Someone who shows their stickers but not their day can still be looked at: the board
+  // opens with its arrangement and an empty list.
+  const dayVisible = !guest || (await mayOpen(auth, uid));
+  if (!dayVisible && !(await followerMaySee(auth.userId, uid, 'showStickers'))) {
     // Same answer whether the board doesn't exist or simply wasn't shared.
     res.status(403).json({ error: 'that board has not been shared with you' });
+    return;
+  }
+  if (!dayVisible && req.method === 'GET') {
+    res.status(200).json({ ...workOnly({}), account: accountFor(auth), board: { uid, guest: true } });
     return;
   }
 
