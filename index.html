@@ -92,10 +92,6 @@
     transform: rotate(var(--rot, 0deg)) scale(1.12);
     filter: drop-shadow(0 12px 18px rgba(60, 85, 105, 0.28));
   }
-  /* Only seen while arranging on the stickers tab: this one belongs to another tab, so
-     it shows faintly rather than as part of what you are looking at. */
-  .sticker.elsewhere { opacity: 0.45; }
-  .sticker.elsewhere:hover { opacity: 1; }
   .sticker.dragging {
     cursor: grabbing;
     z-index: 60;
@@ -842,11 +838,10 @@
   .lighten {
     display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
     font-size: 12px; line-height: 1.5; padding: 10px 12px; margin-bottom: 12px;
-    background: var(--card); border: 1px dashed var(--btn-blue); border-radius: 8px;
+    background: var(--card); border: 1px solid var(--border-light); border-radius: 8px; color: var(--muted);
     animation: taskIn 0.28s cubic-bezier(.22,.9,.32,1);
   }
   .lighten[hidden] { display: none; }
-  .lighten-acts { display: flex; gap: 8px; align-items: center; }
   .lighten-no { background: none; border: none; font: inherit; font-size: 11px; color: var(--muted); cursor: pointer; text-decoration: underline; padding: 0; }
   .carried {
     flex-shrink: 0; align-self: center; font-size: 10px; color: var(--muted);
@@ -1457,10 +1452,7 @@
     </div>
     <div class="lighten" id="lighten" hidden>
       <span id="lightenText"></span>
-      <div class="lighten-acts">
-        <button class="invite-act" id="lightenGo" onclick="lightenDay()">move them</button>
-        <button class="lighten-no" onclick="dismissLighten()">keep them</button>
-      </div>
+      <button class="lighten-no" onclick="undoLighten()">undo</button>
     </div>
 
     <div class="add-box">
@@ -1574,7 +1566,7 @@
         <button class="tray-reset" id="stickerReset" onclick="resetStickerBoard()">clear the board</button>
       </div>
     </div>
-    <div class="tray-hint tray-hint-block">a sticker shows on every tab until you move it while another tab is open, and then it stays on that one. this tab shows all of them, the faint ones live elsewhere.</div>
+    <div class="tray-hint tray-hint-block">stickers stay where you put them, on every tab.</div>
     <div class="mobile-only">on a phone these sit behind the page as decoration, so open it on a computer to arrange them</div>
     <div class="theme-bar" id="stickerThemes"></div>
     <div class="sticker-tray" id="stickerTray"></div>
@@ -3969,8 +3961,13 @@ setInterval(rollOverIfNewDay, 60 * 1000);
 
 // ---------- STRESS ----------
 // One tap says how today feels, and the planner hears it as a signal (engine/signals.js):
-// a harder day admits less work and keeps more slack. It never removes anything by itself.
-// What no longer fits is offered, with one button to move it to the next workday.
+// a harder day admits less work and keeps more slack. It acts rather than asks: whatever
+// no longer fits moves to the next workday the moment you answer, and a line says what
+// moved, with an undo. The answer is a dial, not a ratchet: going back to calm or okay
+// brings those tasks home again.
+//
+// What moved is written into the day's check-in (`moved`), so the undo and the way back
+// survive a reload and work from the other device too.
 const STRESS_LEVELS = [
   { word: 'calm',      mods: {} },
   { word: 'okay',      mods: {} },
@@ -3989,15 +3986,54 @@ function stressSignals(date) {
   return [{ kind: 'stress', modifiers: STRESS_LEVELS[level].mods }];
 }
 
-let lightenDismissed = new Set();
-let lightenCandidates = [];
-
 function setStress(level) {
-  if (stressOf(currentDate) === level) delete checkins[currentDate];
-  else checkins[currentDate] = { stress: level, at: new Date().toISOString() };
-  // A new answer deserves a fresh offer, even if the last one was turned down.
-  lightenDismissed.delete(currentDate);
-  queuePush();
+  const date = currentDate;
+  const cleared = stressOf(date) === level;
+  // Whatever the last answer moved comes back first, so each answer is judged against
+  // the whole day rather than what the previous one left of it.
+  bringBack(date);
+  if (cleared) delete checkins[date];
+  else checkins[date] = { stress: level, at: new Date().toISOString() };
+  if (!cleared && level >= 2 && date >= todayStr()) lighten(date);
+  saveDays();
+  renderDateStrip();
+  renderDay();
+}
+
+function lighten(date) {
+  const moved = [];
+  overflowToday().forEach(({ id, to }) => {
+    const item = (daysMap[date] || []).find(i => i.id === id);
+    if (!item || !to) return;
+    daysMap[date] = daysMap[date].filter(i => i.id !== id);
+    ensureDay(to);
+    daysMap[to].push({ ...item, since: item.since || date });
+    moved.push({ id, to, since: item.since || null });
+  });
+  if (moved.length) checkins[date].moved = moved;
+}
+
+// Only what is still sitting where it was sent, untouched: a task finished, deleted or
+// moved again by hand in the meantime is yours now and stays put.
+function bringBack(date) {
+  const c = checkins[date];
+  if (!c || !Array.isArray(c.moved)) return;
+  c.moved.forEach(({ id, to, since }) => {
+    const item = (daysMap[to] || []).find(i => i.id === id);
+    if (!item || item.done || item.movedTo) return;
+    daysMap[to] = daysMap[to].filter(i => i.id !== id);
+    const back = { ...item };
+    if (since) back.since = since; else delete back.since;
+    ensureDay(date);
+    daysMap[date].push(back);
+  });
+  delete c.moved;
+}
+
+function undoLighten() {
+  bringBack(currentDate);
+  saveDays();
+  renderDateStrip();
   renderDay();
 }
 
@@ -4052,41 +4088,17 @@ function overflowToday() {
 function renderLighten() {
   const el = document.getElementById('lighten');
   if (!el) return;
-  lightenCandidates = [];
-  const level = stressOf(currentDate);
-  // Only asked when the day is already hard, only today or later, and only once per answer.
-  if (level == null || level < 2 || currentDate < todayStr() || lightenDismissed.has(currentDate) || viewingShared()) {
-    el.hidden = true; return;
-  }
-  lightenCandidates = overflowToday();
-  if (!lightenCandidates.length) { el.hidden = true; return; }
-  const n = lightenCandidates.length;
-  const to = lightenCandidates[0].to;
-  const toWord = to ? new Date(to + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long' }).toLowerCase() : 'later';
+  const c = checkins[currentDate];
+  const moved = c && Array.isArray(c.moved) ? c.moved : [];
+  if (!moved.length || viewingShared()) { el.hidden = true; return; }
+  const n = moved.length;
+  const dates = [...new Set(moved.map(m => m.to))];
+  const toWord = dates.length === 1
+    ? new Date(dates[0] + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long' }).toLowerCase()
+    : 'later';
   document.getElementById('lightenText').textContent =
-    `${STRESS_LEVELS[level].word} day: ${n === 1 ? '1 thing can' : n + ' things can'} wait until ${toWord}.`;
+    `${STRESS_LEVELS[c.stress] ? STRESS_LEVELS[c.stress].word : 'hard'} day: moved ${n === 1 ? '1 thing' : n + ' things'} to ${toWord}.`;
   el.hidden = false;
-}
-
-function lightenDay() {
-  const moving = lightenCandidates.slice();
-  if (!moving.length) return;
-  moving.forEach(({ id, to }) => {
-    const item = (daysMap[currentDate] || []).find(i => i.id === id);
-    if (!item || !to) return;
-    daysMap[currentDate] = daysMap[currentDate].filter(i => i.id !== id);
-    ensureDay(to);
-    daysMap[to].push({ ...item, since: item.since || currentDate });
-  });
-  lightenDismissed.add(currentDate);
-  saveDays();
-  renderDateStrip();
-  renderDay();
-}
-
-function dismissLighten() {
-  lightenDismissed.add(currentDate);
-  renderLighten();
 }
 
 // Until there is somewhere to say otherwise, these are the hours the planner assumes.
@@ -4514,10 +4526,9 @@ function initStickers() {
   stickerPlacements.forEach(p => {
     if (typeof p.dx !== 'number') { p.dx = Math.round((p.left || 0) - halfW); delete p.left; }
     if (typeof p.top !== 'number') { p.top = Math.round((p.ty || 0) * window.innerHeight); delete p.ty; }
-    // Ideas and quotes became one tab, briefly called "keep". A sticker still pointing
-    // at any of those names belongs to a tab that no longer exists, and would never show
-    // up anywhere again.
-    if (['ideas', 'quotes', 'keep'].includes(p.tab)) p.tab = 'growth';
+    // Stickers used to belong to whichever tab they were last moved on, which hid them
+    // everywhere else and left them faded on this one. The board is one board now.
+    delete p.tab;
   });
   saveStickerPlacements();
   renderPlacedStickers();
@@ -4670,29 +4681,15 @@ function attachStickerRotate(el, spin, badge, p) {
   spin.addEventListener('dblclick', (e) => e.stopPropagation());
 }
 
-// A sticker with no tab of its own shows on all of them, which is every sticker placed
-// before this existed, and every one freshly dragged out of the tray. Moving one while a
-// particular tab is open is what pins it there. The stickers tab shows the lot, so
-// anything pinned elsewhere can still be found and rearranged.
-function stickerBelongsHere(p) {
-  return !p.tab || p.tab === activeTab || activeTab === 'stickers';
-}
-
-function stickerTabNote(p) {
-  if (!p.tab) return ' · on every tab';
-  if (p.tab === activeTab) return '';
-  return ' · lives on the ' + p.tab + ' tab';
-}
-
 function renderPlacedStickers() {
   const board = document.querySelector('.moodboard');
   if (!board) return;
   board.querySelectorAll('.sticker').forEach(el => el.remove());
 
-  stickerPlacements.filter(stickerBelongsHere).forEach(p => {
+  stickerPlacements.forEach(p => {
     const el = document.createElement('div');
     el.className = 'sticker';
-    el.title = p.name.replace(/-/g, ' ') + ': corner arrows resize and rotate · scroll to resize · double-click to remove' + stickerTabNote(p);
+    el.title = p.name.replace(/-/g, ' ') + ': corner arrows resize and rotate · scroll to resize · double-click to remove';
     el.style.setProperty('--rot', p.rot);
     el.style.setProperty('--size', p.size + 'px');
     el.style.left = Math.round(window.innerWidth / 2 + p.dx) + 'px';
@@ -4703,8 +4700,6 @@ function renderPlacedStickers() {
     img.alt = '';
     img.draggable = false;
     el.appendChild(img);
-
-    if (p.tab && p.tab !== activeTab) el.classList.add('elsewhere');
 
     const badge = document.createElement('div');
     badge.className = 'sticker-size';
@@ -4751,9 +4746,6 @@ function renderPlacedStickers() {
         }
         p.dx = Math.round(left - window.innerWidth / 2);
         p.top = top;
-        // Arranging on the stickers tab is working on the whole board rather than
-        // deciding where something lives, so that one leaves the assignment alone.
-        if (activeTab !== 'stickers') p.tab = activeTab;
         saveStickerPlacements();
       },
     });
