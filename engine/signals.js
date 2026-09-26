@@ -6,9 +6,9 @@
 // eventually reach into the planner from all sides, they land here, as a signal that
 // resolves to a handful of modifiers.
 //
-// Nothing produces signals yet. This exists so that when something does, the planner does
-// not have to change to accept it, and so the shape of that future is argued about now
-// while it is cheap.
+// The first producer is the page's stress check-in (calm / okay / stretched / fried), which
+// resolves to capacity and reserve. Everything else here is still unbuilt, and exists so
+// that when it arrives the planner does not have to change to accept it.
 
 import { clamp } from './model.js';
 

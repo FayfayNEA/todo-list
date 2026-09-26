@@ -259,7 +259,7 @@ export async function mayOpen(auth, targetUid) {
 const isWork = (item) => !item || item.category !== 'personal';
 
 // What a guest is allowed to see: the work half of the days and the backlog, and none of
-// the ideas or quotes, which are nobody else's business.
+// the ideas, quotes, manifesto or how their days felt, which are nobody else's business.
 export function workOnly(state) {
   const days = {};
   const src = (state && state.days) || {};
@@ -272,6 +272,8 @@ export function workOnly(state) {
     backlog: (Array.isArray(state && state.backlog) ? state.backlog : []).filter(isWork),
     ideas: [],
     quotes: [],
+    manifesto: [],
+    checkins: {},
   };
 }
 

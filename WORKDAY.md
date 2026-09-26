@@ -143,7 +143,7 @@ and it is the one the thesis actually rests on.
 ## Built to extend, not extended
 
 `engine/signals.js` is the seam for sleep, energy, recovery, wearables, stress, nutrition,
-environment. **None of them are built.** The file exists so that when they arrive the
+environment. **Only stress is built**, as a one-tap check-in on the day. The file exists so that when they arrive the
 planner does not have to change to accept them, and so the shape of that future gets
 argued about now while it is cheap.
 

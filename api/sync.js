@@ -4,7 +4,7 @@ import {
 } from './_lib.js';
 
 // GET  /api/sync[?uid=]  -> drains the agent inbox into the day map, returns the whole state
-// PUT  /api/sync[?uid=]  -> replaces stored state with the posted { days, backlog, ideas, quotes }
+// PUT  /api/sync[?uid=]  -> replaces stored state with the posted { days, backlog, ideas, quotes, manifesto, checkins }
 //
 // `uid` opens somebody else's board, and only one they handed over. A guest reads the
 // work half of it and nothing else, and cannot write to it at all: what they can do is
@@ -18,6 +18,13 @@ function storedIdeas(state) {
 }
 function storedQuotes(state) {
   return Array.isArray(state && state.quotes) ? state.quotes : [];
+}
+function storedManifesto(state) {
+  return Array.isArray(state && state.manifesto) ? state.manifesto : [];
+}
+const isMap = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+function storedCheckins(state) {
+  return isMap(state && state.checkins) ? state.checkins : {};
 }
 export default async function handler(req, res) {
   const auth = authorize(req);
@@ -68,6 +75,8 @@ export default async function handler(req, res) {
         // `likes` was this list's original key; read it forward so nothing is lost.
         ideas: storedIdeas(state),
         quotes: storedQuotes(state),
+        manifesto: storedManifesto(state),
+        checkins: storedCheckins(state),
         // Who this token belongs to: the app shows it, and uses it to tell whose
         // board it is looking at.
         account: accountFor(auth),
@@ -89,11 +98,14 @@ export default async function handler(req, res) {
       const backlog = Array.isArray(body && body.backlog) ? body.backlog : [];
       // A client running older JS omits the key entirely; keep what's stored rather
       // than letting a stale tab wipe the list.
-      const needStored = !Array.isArray(body && body.ideas) || !Array.isArray(body && body.quotes);
+      const needStored = !Array.isArray(body && body.ideas) || !Array.isArray(body && body.quotes)
+        || !Array.isArray(body && body.manifesto) || !isMap(body && body.checkins);
       const stored = needStored ? await getState(uid) : null;
       const ideas = Array.isArray(body && body.ideas) ? body.ideas : storedIdeas(stored);
       const quotes = Array.isArray(body && body.quotes) ? body.quotes : storedQuotes(stored);
-      await putState(uid, { days, backlog, ideas, quotes });
+      const manifesto = Array.isArray(body && body.manifesto) ? body.manifesto : storedManifesto(stored);
+      const checkins = isMap(body && body.checkins) ? body.checkins : storedCheckins(stored);
+      await putState(uid, { days, backlog, ideas, quotes, manifesto, checkins });
       res.status(200).json({ ok: true });
       return;
     }

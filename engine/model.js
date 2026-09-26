@@ -75,6 +75,9 @@ export function normalizeTask(raw, opts = {}) {
     // Minutes already spent, so a task resumed after an interruption asks for what is
     // left rather than for the whole thing again.
     spentMin: Number.isFinite(t.spentMin) ? Math.max(0, t.spentMin) : 0,
+    // How many days this has been rolled forward unfinished. The planner reads it as
+    // staleness, so work that keeps getting dragged along stops sinking.
+    carriedDays: Number.isFinite(t.carriedDays) ? Math.max(0, t.carriedDays) : 0,
     date: t.date ? dayKey(t.date) : (opts.date || null),
     source: t.source || 'day',
   };

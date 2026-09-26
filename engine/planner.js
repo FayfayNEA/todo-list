@@ -162,7 +162,8 @@ export function planDay(input) {
   // five-minute surprise, and the person pays for that in scramble.
   const rawCapacity = totalMinutes(free);
   const reserve = Math.round(rawCapacity * profile.reserveRatio * (autonomySignals.reserveMultiplier || 1));
-  const capacity = Math.max(0, rawCapacity - reserve);
+  // A signal (a bad night, a stressful day) can shrink what's attempted, never grow it.
+  const capacity = Math.max(0, Math.round((rawCapacity - reserve) * (autonomySignals.capacityMultiplier || 1)));
 
   // 3. Work out what is even eligible today.
   const { ready, blocked } = readyTasks(tasks.filter((t) => !t.done));

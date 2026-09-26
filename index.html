@@ -796,6 +796,66 @@
   }
   .quote-who-input:focus { border-color: var(--btn-blue); }
 
+  /* The manifesto is read more than it's edited, so it's set like a page, not a list of
+     tasks: numbered, roomy, and editable right where it sits. */
+  #manifestoList { list-style: none; margin: 18px 0 0; padding: 0; counter-reset: value; }
+  .manifesto-item {
+    position: relative; counter-increment: value;
+    display: flex; align-items: baseline; gap: 14px;
+    padding: 14px 34px 14px 4px;
+    border-bottom: 1px solid var(--border-light);
+    animation: taskIn 0.28s cubic-bezier(.22,.9,.32,1);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+  .manifesto-item::before {
+    content: counter(value, decimal-leading-zero);
+    flex-shrink: 0; font-size: 11px; letter-spacing: 0.08em; color: var(--btn-blue); opacity: 0.8;
+  }
+  .manifesto-item.leaving { opacity: 0; transform: translateX(24px); }
+  .manifesto-text {
+    flex: 1; min-width: 0; font-size: 15px; line-height: 1.6; white-space: pre-wrap;
+    outline: none; border-radius: 4px; cursor: text;
+  }
+  .manifesto-text:focus { background: var(--highlight); box-shadow: 0 0 0 4px var(--highlight); }
+  .manifesto-item .remove { position: absolute; right: 2px; top: 12px; }
+
+  /* Finished ideas leave growth and settle here, folded away unless you go looking. */
+  .grown-card .ln .when { margin-left: auto; padding-left: 10px; flex-shrink: 0; font-size: 10px; color: var(--muted); }
+  .grown-card .ln .undo {
+    flex-shrink: 0; background: none; border: none; padding: 0 0 0 8px; cursor: pointer;
+    font: inherit; font-size: 10px; color: var(--muted); text-decoration: underline;
+  }
+  .grown-card .ln .undo:hover { color: var(--text); }
+
+  /* Stress check-in: four words, one tap, no scale to agonise over. */
+  .checkin { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: -6px 0 12px; }
+  .checkin[hidden] { display: none; }
+  .checkin-q { font-size: 11px; color: var(--muted); letter-spacing: 0.04em; }
+  .checkin-opts { display: flex; gap: 4px; flex-wrap: wrap; }
+  .checkin-opts button {
+    font: inherit; font-size: 11px; letter-spacing: 0.04em; padding: 4px 9px; cursor: pointer;
+    background: var(--card); color: var(--muted); border: 1px solid var(--border-light); border-radius: 20px;
+    transition: transform 0.15s cubic-bezier(.2,.8,.3,1.4), border-color 0.15s ease, color 0.15s ease;
+  }
+  .checkin-opts button:hover { color: var(--text); border-color: var(--border); transform: scale(1.06); }
+  .checkin-opts button.on { color: var(--text); border-color: var(--btn-blue); background: var(--highlight); }
+  .lighten {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+    font-size: 12px; line-height: 1.5; padding: 10px 12px; margin-bottom: 12px;
+    background: var(--card); border: 1px dashed var(--btn-blue); border-radius: 8px;
+    animation: taskIn 0.28s cubic-bezier(.22,.9,.32,1);
+  }
+  .lighten[hidden] { display: none; }
+  .lighten-acts { display: flex; gap: 8px; align-items: center; }
+  .lighten-no { background: none; border: none; font: inherit; font-size: 11px; color: var(--muted); cursor: pointer; text-decoration: underline; padding: 0; }
+  .carried {
+    flex-shrink: 0; align-self: center; font-size: 10px; color: var(--muted);
+    letter-spacing: 0.04em; white-space: nowrap;
+  }
+  .metrics-detail .ln.was-moved .mk { color: var(--btn-blue); }
+  .metrics-detail .ln.was-moved .tx { color: var(--muted); }
+  body.viewing-shared .checkin, body.viewing-shared .lighten { display: none !important; }
+
   .setting-group { padding: 4px 0 16px; border-bottom: 1px solid var(--border-light); margin-bottom: 16px; }
   .setting-group:last-child { border-bottom: none; margin-bottom: 4px; }
   .setting-title {
@@ -856,6 +916,7 @@
   body.viewing-shared #backlogListPersonal,
   body.viewing-shared #backlogEmptyPersonal,
   body.viewing-shared .tab[data-tab="growth"],
+  body.viewing-shared .tab[data-tab="manifesto"],
   body.viewing-shared .tab[data-tab="metrics"],
   body.viewing-shared #newItemCategory,
   body.viewing-shared #newBacklogCategory,
@@ -1358,6 +1419,7 @@
     <div class="tab active" data-tab="day" onclick="switchTab('day')">Day</div>
     <div class="tab" data-tab="backlog" onclick="switchTab('backlog')">Backlog</div>
     <div class="tab" data-tab="growth" onclick="switchTab('growth')">growth</div>
+    <div class="tab" data-tab="manifesto" onclick="switchTab('manifesto')">manifesto</div>
     <div class="tab" data-tab="stickers" onclick="switchTab('stickers')">stickers</div>
     <div class="tab" data-tab="metrics" onclick="switchTab('metrics')">Metrics</div>
     <div class="tab tab-settings" data-tab="settings" onclick="switchTab('settings')"
@@ -1387,6 +1449,19 @@
     </div>
     <div class="strip-hint" id="dayDragHint">drag a task to reorder it, or onto a day to move it</div>
     <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+
+    <!-- How today feels. It changes how much the day tries to hold, nothing else. -->
+    <div class="checkin" id="checkin">
+      <span class="checkin-q">how's today feeling?</span>
+      <div class="checkin-opts" id="checkinOpts"></div>
+    </div>
+    <div class="lighten" id="lighten" hidden>
+      <span id="lightenText"></span>
+      <div class="lighten-acts">
+        <button class="invite-act" id="lightenGo" onclick="lightenDay()">move them</button>
+        <button class="lighten-no" onclick="dismissLighten()">keep them</button>
+      </div>
+    </div>
 
     <div class="add-box">
       <textarea id="dayInput" rows="1" placeholder="add a task..."></textarea>
@@ -1476,6 +1551,19 @@
     <div class="empty" id="quotesEmpty" style="display:none;">nothing here yet</div>
   </div>
 
+  <!-- MANIFESTO VIEW: what you stand for, one value at a time, written and rewritten in place -->
+  <div id="manifestoView" class="tab-panel" style="display:none;">
+    <div class="add-box">
+      <textarea id="manifestoInput" rows="2" placeholder="something you believe, or want to live by..."></textarea>
+      <div class="hint">enter to add &middot; tap one to rewrite it</div>
+    </div>
+    <div class="add-row-outside">
+      <button onclick="submitManifestoInput()">add</button>
+    </div>
+    <ol id="manifestoList"></ol>
+    <div class="empty" id="manifestoEmpty" style="display:none;">nothing written yet</div>
+  </div>
+
   <!-- STICKERS VIEW -->
   <div id="stickersView" class="tab-panel" style="display:none;">
     <div class="tray-top">
@@ -1563,6 +1651,7 @@
       <div class="summary-box"><div class="num" id="metricDone">0</div><div class="lbl">tasks done</div></div>
       <div class="summary-box"><div class="num" id="metricRate">0%</div><div class="lbl">completion</div></div>
     </div>
+    <div id="grownCard"></div>
     <div id="metricsList"></div>
     <div class="empty" id="metricsEmpty" style="display:none;">no days tracked yet</div>
   </div>
@@ -1718,7 +1807,7 @@ async function submitLegacyKey() {
     try { localStorage.removeItem(TOKEN_KEY); } catch (e) {}
     account = state.account || null;
     writeAccount(account);
-    daysMap = {}; backlog = []; ideas = []; quotes = [];
+    daysMap = {}; backlog = []; ideas = []; quotes = []; manifesto = []; checkins = {};
     document.getElementById('authKey').value = '';
     hideAuthGate();
     applyBoardOwnership();
@@ -1794,7 +1883,7 @@ function signInWith(data) {
   try { localStorage.removeItem(LEGACY_KEY); } catch (e) {}
   writeAccount(account);
   // Whatever the last account left in memory is not this one's.
-  daysMap = {}; backlog = []; ideas = []; quotes = [];
+  daysMap = {}; backlog = []; ideas = []; quotes = []; manifesto = []; checkins = {};
   document.getElementById('authPassword').value = '';
   document.getElementById('authInvite').value = '';
   hideAuthGate();
@@ -1809,7 +1898,7 @@ function signOut() {
   clearToken();
   account = null;
   writeAccount(null);
-  daysMap = {}; backlog = []; ideas = []; quotes = [];
+  daysMap = {}; backlog = []; ideas = []; quotes = []; manifesto = []; checkins = {};
   currentDate = todayStr();
   renderAll();
   renderAccount();
@@ -2321,20 +2410,24 @@ function readCache() {
 // "older than the server" from "newer than the server, just never sent".
 function writeCache(dirty) {
   try {
-    localStorage.setItem(cacheKey(), JSON.stringify({ days: daysMap, backlog, ideas, quotes, dirty: !!dirty }));
+    localStorage.setItem(cacheKey(), JSON.stringify({ days: daysMap, backlog, ideas, quotes, manifesto, checkins, dirty: !!dirty }));
   } catch (e) {}
 }
 
 let daysMap = {};
 let ideas = [];
 let quotes = [];
+let manifesto = [];
+let checkins = {};                 // date -> { stress: 0..3 }
 let backlog = [];
 let currentDate = todayStr();
 let stripStart = addDaysToStr(currentDate, -2);
 
+// Local, not UTC: the UTC date turns over at 8pm in New York, and a day that ends at 8pm
+// would roll its unfinished work forward while it's still being worked on.
 function todayStr() {
   const d = new Date();
-  return d.toISOString().slice(0, 10);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 function addDaysToStr(dateStr, delta) {
   const d = new Date(dateStr + 'T00:00:00');
@@ -2399,7 +2492,7 @@ async function pushState() {
     const res = await fetch(syncUrl(), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-      body: JSON.stringify({ days: daysMap, backlog, ideas, quotes })
+      body: JSON.stringify({ days: daysMap, backlog, ideas, quotes, manifesto, checkins })
     });
     if (res.status === 401) { clearToken(); pushFailed = true; setSaveStatus('error'); showAuthGate('that session has expired, sign in again.', true); return; }
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -2429,18 +2522,22 @@ function applyState(state) {
     // `likes` was this list's original key; keep reading it so nothing saved under it is lost.
     ideas = Array.isArray(state.ideas) ? state.ideas : (Array.isArray(state.likes) ? state.likes : []);
     quotes = Array.isArray(state.quotes) ? state.quotes : [];
+    manifesto = Array.isArray(state.manifesto) ? state.manifesto : [];
+    checkins = state.checkins && typeof state.checkins === 'object' && !Array.isArray(state.checkins) ? state.checkins : {};
     return true;
   }
   return false;
 }
 
 function renderAll() {
+  rollOver();
   ensureDay(currentDate);
   renderDateStrip();
   renderDay();
   renderBacklog();
   renderIdeas();
   renderQuotes();
+  renderManifesto();
   renderMetrics();
 }
 
@@ -2470,6 +2567,8 @@ function mergeState(remote) {
     backlog: mergeById(backlog, remote && remote.backlog),
     ideas: mergeById(ideas, remote && (remote.ideas || remote.likes)),
     quotes: mergeById(quotes, remote && remote.quotes),
+    manifesto: mergeById(manifesto, remote && remote.manifesto),
+    checkins: { ...((remote && remote.checkins) || {}), ...checkins },
   };
 }
 
@@ -2494,7 +2593,7 @@ async function loadAll() {
       clearToken();
       account = null;
       writeAccount(null);
-      daysMap = {}; backlog = []; ideas = []; quotes = [];
+      daysMap = {}; backlog = []; ideas = []; quotes = []; manifesto = []; checkins = {};
       setSaveStatus('error');
       renderAll();
       renderAccount();
@@ -2625,6 +2724,7 @@ const TAB_PANELS = {
   day: 'dayView',
   backlog: 'backlogView',
   growth: 'growthView',
+  manifesto: 'manifestoView',
   stickers: 'stickersView',
   metrics: 'metricsView',
   settings: 'settingsView',
@@ -2647,6 +2747,7 @@ function switchTab(tab) {
   });
   if (tab === 'metrics') renderMetrics();
   if (tab === 'growth') { renderIdeas(); renderQuotes(); }
+  if (tab === 'manifesto') renderManifesto();
   if (tab === 'stickers') renderStickerTray();
   if (tab === 'backlog') { renderDateStrip(); renderBacklog(); }
   if (tab === 'settings') { renderAccount(); loadInvites(); loadTeam(); }
@@ -2748,6 +2849,14 @@ function buildItemLi(item, onToggle, onRemove, onDrop) {
   topRow.appendChild(caret);
   topRow.appendChild(label);
   if (subs.length) topRow.appendChild(count);
+  const carriedFor = carriedDaysOf(item);
+  if (carriedFor > 0 && !item.done) {
+    const carried = document.createElement('span');
+    carried.className = 'carried';
+    carried.textContent = '\u21bb ' + carriedFor + 'd';
+    carried.title = 'carried over since ' + fmtDate(item.since);
+    topRow.appendChild(carried);
+  }
   topRow.appendChild(remove);
   li.appendChild(topRow);
 
@@ -2841,12 +2950,20 @@ function submitIdeasInput() {
   input.focus();
 }
 
+// Checking an idea off means you did it, so it stops being a possibility in growth and
+// becomes something you've grown into, filed quietly under metrics.
 function toggleIdea(id) {
   const idea = ideas.find(l => l.id === id);
   if (!idea) return;
   idea.done = !idea.done;
+  if (idea.done) idea.doneAt = todayStr();
+  else delete idea.doneAt;
   saveIdeas();
-  renderIdeas();
+  renderMetrics();
+  const row = document.querySelector(`#ideasList li[data-id="${id}"]`);
+  if (!row || !idea.done) { renderIdeas(); return; }
+  row.classList.add('leaving');
+  setTimeout(renderIdeas, 220);
 }
 
 function removeIdea(id) {
@@ -2860,9 +2977,10 @@ function renderIdeas() {
   const emptyEl = document.getElementById('ideasEmpty');
   if (!listEl) return;
   listEl.innerHTML = '';
-  emptyEl.style.display = ideas.length ? 'none' : 'block';
+  const open = ideas.filter(i => !i.done);
+  emptyEl.style.display = open.length ? 'none' : 'block';
 
-  ideas.forEach(idea => {
+  open.forEach(idea => {
     const li = document.createElement('li');
     li.className = 'task-item' + (idea.done ? ' done' : '');
     li.dataset.id = idea.id;
@@ -3037,6 +3155,71 @@ function closeQuotePop() {
   openQuoteId = null;
   flipClose(pop, card, target);
   renderQuotes();
+}
+
+// ---------- MANIFESTO ----------
+// Values, not tasks: nothing to finish. Each one is edited where it sits, and the ×
+// is the only way one goes away, so clearing the words just puts them back.
+function submitManifestoInput() {
+  const input = document.getElementById('manifestoInput');
+  const text = (input.value || '').trim();
+  if (!text) { input.focus(); return; }
+  manifesto.push({ id: crypto.randomUUID(), text });
+  input.value = '';
+  queuePush();
+  renderManifesto();
+  input.focus();
+}
+
+function removeManifestoItem(id) {
+  const row = document.querySelector(`.manifesto-item[data-id="${id}"]`);
+  manifesto = manifesto.filter(m => m.id !== id);
+  queuePush();
+  if (!row) { renderManifesto(); return; }
+  row.classList.add('leaving');
+  setTimeout(renderManifesto, 220);
+}
+
+function renderManifesto() {
+  const listEl = document.getElementById('manifestoList');
+  const emptyEl = document.getElementById('manifestoEmpty');
+  if (!listEl) return;
+  // Never under someone's cursor: a sync landing mid-sentence would throw the edit away.
+  if (listEl.contains(document.activeElement)) return;
+  listEl.innerHTML = '';
+  emptyEl.style.display = manifesto.length ? 'none' : 'block';
+
+  manifesto.forEach(value => {
+    const li = document.createElement('li');
+    li.className = 'manifesto-item';
+    li.dataset.id = value.id;
+
+    const text = document.createElement('div');
+    text.className = 'manifesto-text';
+    text.textContent = value.text;
+    text.contentEditable = 'plaintext-only';
+    if (text.contentEditable !== 'plaintext-only') text.contentEditable = 'true';
+    text.spellcheck = false;
+    text.onkeydown = (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); text.blur(); }
+      if (e.key === 'Escape') { text.textContent = value.text; text.blur(); }
+    };
+    text.onblur = () => {
+      const val = (text.innerText || '').trim();
+      if (!val) { text.textContent = value.text; return; }
+      if (val !== value.text) { value.text = val; queuePush(); }
+    };
+
+    const remove = document.createElement('button');
+    remove.className = 'remove';
+    remove.textContent = '\u00d7';
+    remove.title = 'remove this';
+    remove.onclick = (e) => { e.stopPropagation(); removeManifestoItem(value.id); };
+
+    li.appendChild(text);
+    li.appendChild(remove);
+    listEl.appendChild(li);
+  });
 }
 
 // ---------- IDEA REFLECTION ----------
@@ -3653,6 +3836,9 @@ document.getElementById('dayInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitDayInput(); }
 });
 // Shift+enter is a line break, which verse and couplets actually need.
+document.getElementById('manifestoInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitManifestoInput(); }
+});
 document.getElementById('growthInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitGrowthInput(); }
 });
@@ -3695,8 +3881,9 @@ function planOrder(items) {
       tasks: items.map((it) => ({
         id: it.id, text: it.text, done: it.done, category: it.category,
         kind: it.kind, estimateMin: it.estimateMin, priority: it.priority,
-        deadline: it.deadline, blockedBy: it.blockedBy,
+        deadline: it.deadline, blockedBy: it.blockedBy, carriedDays: carriedDaysOf(it),
       })),
+      signals: stressSignals(currentDate),
     });
 
     const rank = new Map();
@@ -3727,6 +3914,181 @@ function planOrder(items) {
   }
 }
 
+// ---------- CARRYING UNFINISHED WORK FORWARD ----------
+// Anything left undone on a day that's over moves to today by itself. The original stays
+// behind marked `movedTo`, so the old day's metrics still show it as not done, and the
+// copy on today remembers when it was first meant to happen (`since`), which the planner
+// reads as staleness: the longer something is dragged along, the higher it sits.
+//
+// The copy's id is derived from the original's and today's date, so two devices rolling
+// the same task over separately end up with one task, not two, once they sync.
+function carriedDaysOf(item) {
+  if (!item || !item.since) return 0;
+  const a = new Date(item.since + 'T00:00:00'), b = new Date(todayStr() + 'T00:00:00');
+  return Math.max(0, Math.round((b - a) / 86400000));
+}
+
+function rollOver() {
+  if (viewingShared()) return false;
+  const today = todayStr();
+  ensureDay(today);
+  const onToday = new Set(daysMap[today].map(i => i.id));
+  let moved = 0;
+  Object.keys(daysMap).filter(d => d < today).forEach(date => {
+    (daysMap[date] || []).forEach(item => {
+      if (!item || item.done || item.movedTo) return;
+      const baseId = String(item.id).split('~')[0];
+      const copyId = baseId + '~' + today;
+      item.movedTo = today;
+      moved++;
+      if (onToday.has(copyId)) return;
+      const copy = { ...item, id: copyId, since: item.since || date };
+      delete copy.movedTo;
+      delete copy.handPlaced;
+      daysMap[today].push(copy);
+      onToday.add(copyId);
+    });
+  });
+  if (moved) queuePush();
+  return moved > 0;
+}
+
+// Midnight passes with the tab open more often than you'd think.
+let rolledFor = todayStr();
+function rollOverIfNewDay() {
+  const today = todayStr();
+  if (today === rolledFor) return;
+  if (currentDate === rolledFor) currentDate = today;
+  rolledFor = today;
+  rollOver();
+  renderDateStrip();
+  renderDay();
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) rollOverIfNewDay(); });
+setInterval(rollOverIfNewDay, 60 * 1000);
+
+// ---------- STRESS ----------
+// One tap says how today feels, and the planner hears it as a signal (engine/signals.js):
+// a harder day admits less work and keeps more slack. It never removes anything by itself.
+// What no longer fits is offered, with one button to move it to the next workday.
+const STRESS_LEVELS = [
+  { word: 'calm',      mods: {} },
+  { word: 'okay',      mods: {} },
+  { word: 'stretched', mods: { capacityMultiplier: 0.7, reserveMultiplier: 1.4 } },
+  { word: 'fried',     mods: { capacityMultiplier: 0.45, reserveMultiplier: 1.8 } },
+];
+
+function stressOf(date) {
+  const c = checkins[date];
+  return c && Number.isInteger(c.stress) ? c.stress : null;
+}
+
+function stressSignals(date) {
+  const level = stressOf(date);
+  if (level == null) return [];
+  return [{ kind: 'stress', modifiers: STRESS_LEVELS[level].mods }];
+}
+
+let lightenDismissed = new Set();
+let lightenCandidates = [];
+
+function setStress(level) {
+  if (stressOf(currentDate) === level) delete checkins[currentDate];
+  else checkins[currentDate] = { stress: level, at: new Date().toISOString() };
+  // A new answer deserves a fresh offer, even if the last one was turned down.
+  lightenDismissed.delete(currentDate);
+  queuePush();
+  renderDay();
+}
+
+function renderCheckin() {
+  const box = document.getElementById('checkinOpts');
+  const wrap = document.getElementById('checkin');
+  if (!box) return;
+  // Only today and the days ahead: how last tuesday felt changes nothing now.
+  wrap.hidden = currentDate < todayStr();
+  box.innerHTML = '';
+  const level = stressOf(currentDate);
+  STRESS_LEVELS.forEach((s, i) => {
+    const b = document.createElement('button');
+    b.textContent = s.word;
+    if (level === i) b.classList.add('on');
+    b.onclick = () => setStress(i);
+    box.appendChild(b);
+  });
+  renderLighten();
+}
+
+// Plan the whole day at once, both halves, with today's stress, and see what doesn't fit.
+function overflowToday() {
+  if (!engine) return [];
+  const items = (daysMap[currentDate] || []).filter(i => !i.done && !i.movedTo);
+  if (!items.length) return [];
+  try {
+    const plan = engine.planDay({
+      date: currentDate,
+      profile: workdayProfile(),
+      tasks: items.map((it) => ({
+        id: it.id, text: it.text, done: false, category: it.category,
+        kind: it.kind, estimateMin: it.estimateMin, priority: it.priority,
+        deadline: it.deadline, blockedBy: it.blockedBy, carriedDays: carriedDaysOf(it),
+      })),
+      signals: stressSignals(currentDate),
+    });
+    const byId = new Map(items.map(i => [i.id, i]));
+    // Never offered up: anything placed by hand, or due today. Those are decisions, not tidying.
+    return plan.deferred
+      .filter(d => {
+        const it = byId.get(d.taskId);
+        return it && !it.handPlaced && !(it.deadline && it.deadline <= currentDate);
+      })
+      .map(d => ({ id: d.taskId, to: d.suggestedDate }));
+  } catch (e) {
+    console.warn('planner could not size the day', e);
+    return [];
+  }
+}
+
+function renderLighten() {
+  const el = document.getElementById('lighten');
+  if (!el) return;
+  lightenCandidates = [];
+  const level = stressOf(currentDate);
+  // Only asked when the day is already hard, only today or later, and only once per answer.
+  if (level == null || level < 2 || currentDate < todayStr() || lightenDismissed.has(currentDate) || viewingShared()) {
+    el.hidden = true; return;
+  }
+  lightenCandidates = overflowToday();
+  if (!lightenCandidates.length) { el.hidden = true; return; }
+  const n = lightenCandidates.length;
+  const to = lightenCandidates[0].to;
+  const toWord = to ? new Date(to + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long' }).toLowerCase() : 'later';
+  document.getElementById('lightenText').textContent =
+    `${STRESS_LEVELS[level].word} day: ${n === 1 ? '1 thing can' : n + ' things can'} wait until ${toWord}.`;
+  el.hidden = false;
+}
+
+function lightenDay() {
+  const moving = lightenCandidates.slice();
+  if (!moving.length) return;
+  moving.forEach(({ id, to }) => {
+    const item = (daysMap[currentDate] || []).find(i => i.id === id);
+    if (!item || !to) return;
+    daysMap[currentDate] = daysMap[currentDate].filter(i => i.id !== id);
+    ensureDay(to);
+    daysMap[to].push({ ...item, since: item.since || currentDate });
+  });
+  lightenDismissed.add(currentDate);
+  saveDays();
+  renderDateStrip();
+  renderDay();
+}
+
+function dismissLighten() {
+  lightenDismissed.add(currentDate);
+  renderLighten();
+}
+
 // Until there is somewhere to say otherwise, these are the hours the planner assumes.
 function workdayProfile() {
   return { startsAt: '09:00', endsAt: '17:30', deepWorkWindows: [{ start: '09:00', end: '12:30' }], lunch: null };
@@ -3735,7 +4097,10 @@ function workdayProfile() {
 function renderDay() {
   loadNotes();
   ensureDay(currentDate);
-  const items = daysMap[currentDate];
+  // A task that rolled forward stays on the day it was meant for, so metrics can still
+  // say it didn't happen, but it isn't shown there as something still to do.
+  const items = daysMap[currentDate].filter(i => !i.movedTo);
+  renderCheckin();
 
   ['work', 'personal'].forEach(category => {
     const suffix = category === 'work' ? 'Work' : 'Personal';
@@ -3869,6 +4234,66 @@ function scheduleBacklogItem(id, dateStr) {
 
 // ---------- METRICS ----------
 let metricsOpen = new Set();
+let grownOpen = false;
+
+function renderGrown() {
+  const host = document.getElementById('grownCard');
+  if (!host) return;
+  host.innerHTML = '';
+  const grown = ideas.filter(i => i.done)
+    .sort((a, b) => (b.doneAt || '').localeCompare(a.doneAt || ''));
+  if (!grown.length) return;
+
+  const card = document.createElement('div');
+  card.className = 'metrics-card grown-card' + (grownOpen ? ' open' : '');
+  const row = document.createElement('div');
+  row.className = 'row';
+  const title = document.createElement('div');
+  title.className = 'date';
+  title.innerHTML = `<span class="caret">${grownOpen ? '▾' : '▸'}</span>`;
+  title.appendChild(document.createTextNode('ideas you grew into'));
+  const stat = document.createElement('div');
+  stat.className = 'stat';
+  stat.textContent = grown.length;
+  row.appendChild(title);
+  row.appendChild(stat);
+  card.appendChild(row);
+
+  if (grownOpen) {
+    const wrap = document.createElement('div');
+    wrap.className = 'metrics-detail';
+    grown.forEach(idea => {
+      const ln = document.createElement('div');
+      ln.className = 'ln is-done';
+      const mk = document.createElement('span');
+      mk.className = 'mk';
+      mk.textContent = '✓';
+      const tx = document.createElement('span');
+      tx.className = 'tx';
+      tx.textContent = idea.text;
+      ln.appendChild(mk);
+      ln.appendChild(tx);
+      if (idea.doneAt) {
+        const when = document.createElement('span');
+        when.className = 'when';
+        when.textContent = new Date(idea.doneAt + 'T00:00:00')
+          .toLocaleDateString(undefined, { month: 'short', day: 'numeric' }).toLowerCase();
+        ln.appendChild(when);
+      }
+      const undo = document.createElement('button');
+      undo.className = 'undo';
+      undo.textContent = 'put back';
+      undo.title = 'back to growth';
+      undo.onclick = (e) => { e.stopPropagation(); toggleIdea(idea.id); };
+      ln.appendChild(undo);
+      wrap.appendChild(ln);
+    });
+    card.appendChild(wrap);
+  }
+
+  card.onclick = () => { grownOpen = !grownOpen; renderGrown(); };
+  host.appendChild(card);
+}
 
 function buildMetricsDetail(items) {
   const wrap = document.createElement('div');
@@ -3887,10 +4312,10 @@ function buildMetricsDetail(items) {
     // done first, then not-done
     catItems.slice().sort((a, b) => (b.done ? 1 : 0) - (a.done ? 1 : 0)).forEach(item => {
       const ln = document.createElement('div');
-      ln.className = 'ln ' + (item.done ? 'is-done' : 'not-done');
+      ln.className = 'ln ' + (item.done ? 'is-done' : item.movedTo ? 'not-done was-moved' : 'not-done');
       const mk = document.createElement('span');
       mk.className = 'mk';
-      mk.textContent = item.done ? '✓' : '·';
+      mk.textContent = item.done ? '✓' : item.movedTo ? '↻' : '·';
       const tx = document.createElement('span');
       tx.className = 'tx';
       tx.textContent = item.text;
@@ -3910,6 +4335,7 @@ function buildMetricsDetail(items) {
 }
 
 function renderMetrics() {
+  renderGrown();
   const listEl = document.getElementById('metricsList');
   const emptyState = document.getElementById('metricsEmpty');
   listEl.innerHTML = '';
