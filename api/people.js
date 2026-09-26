@@ -8,7 +8,8 @@ import {
 // GET  /api/people?q=name              -> people whose name matches
 // GET  /api/people?group=1&date=       -> the work day of everyone you follow who shows it
 // GET  /api/people?stickers=<uid>      -> someone's sticker board, if they show it to you
-// PUT  /api/people { name?, showDay?, showStickers?, stickers?, pins?, photo? }
+// GET  /api/people?look=<uid>          -> their colours, title and background (yours with your own id)
+// PUT  /api/people { name?, showDay?, showStickers?, stickers?, pins?, photo?, theme? }
 // POST /api/people { action: follow | unfollow | approve | deny | remove, uid }
 // POST /api/people { action: ask, uid, date, text }          ask to add to their day
 // POST /api/people { action: ask_done, id }                  you added it, or said no
@@ -22,7 +23,7 @@ import {
 const MAX_NAME = 40;
 const MAX_STICKERS = 200;
 const MAX_PINS = 40;
-const MAX_PHOTO = 1_500_000;                       // characters of data URL
+const MAX_PHOTO = 2_500_000;                       // characters of data URL; a background is the largest
 const PHOTO_ID = /^[a-f0-9]{16,64}$/;
 const PHOTO_SRC = /^data:image\/(jpeg|png|webp|gif);base64,[A-Za-z0-9+/=]+$/;
 
@@ -93,6 +94,18 @@ export default async function handler(req, res) {
         return;
       }
 
+      if (q.look) {
+        const uid = q.look === 'me' ? me : String(q.look);
+        const allowed = uid === me
+          || (await followerMaySee(me, uid, 'showDay'))
+          || (await followerMaySee(me, uid, 'showStickers'));
+        if (!allowed) { res.status(403).json({ error: 'not shared with you' }); return; }
+        const theme = (profiles[uid] && profiles[uid].theme) || {};
+        const bg = theme.bg ? await getPhoto(uid, theme.bg) : null;
+        res.status(200).json({ theme, bg: bg && bg.src ? bg.src : null });
+        return;
+      }
+
       if (q.stickers) {
         const uid = String(q.stickers);
         if (!(await followerMaySee(me, uid, 'showStickers'))) {
@@ -116,7 +129,7 @@ export default async function handler(req, res) {
       const asks = await getAsks();
       const sessions = (await getSessions()).filter((x) => x.members.includes(me));
       res.status(200).json({
-        me: { name: mine.name || '', showDay: !!mine.showDay, showStickers: !!mine.showStickers },
+        me: { name: mine.name || '', showDay: !!mine.showDay, showStickers: !!mine.showStickers, theme: mine.theme || {} },
         asks: asks.filter((a) => a.to === me).map((a) => ({ ...a, fromName: nameOf(profiles, a.from, a.fromEmail) })),
         sessions: sessions.map((x) => ({
           ...x,
@@ -140,6 +153,16 @@ export default async function handler(req, res) {
       }
       if (body.showDay != null) p.showDay = !!body.showDay;
       if (body.showStickers != null) p.showStickers = !!body.showStickers;
+      // How the board looks: a hue (null is the original blue), how saturated, the title
+      // at the top, and a background photo stored like any other.
+      if (body.theme && typeof body.theme === 'object') {
+        const t = body.theme, out = { ...(p.theme || {}) };
+        if ('hue' in t) { if (Number.isFinite(t.hue)) out.hue = Math.round(((t.hue % 360) + 360) % 360); else delete out.hue; }
+        if ('sat' in t) { if (Number.isFinite(t.sat)) out.sat = Math.min(1.4, Math.max(0, t.sat)); else delete out.sat; }
+        if ('title' in t) { const title = String(t.title || '').replace(/\s+/g, ' ').trim().slice(0, 40); if (title) out.title = title; else delete out.title; }
+        if ('bg' in t) { if (PHOTO_ID.test(String(t.bg || ''))) out.bg = t.bg; else delete out.bg; }
+        p.theme = out;
+      }
       profiles[me] = p;
       await putProfiles(profiles);
       if (Array.isArray(body.stickers)) await putStickers(me, body.stickers.slice(0, MAX_STICKERS));
@@ -154,7 +177,7 @@ export default async function handler(req, res) {
           .filter((p) => p && PHOTO_ID.test(String(p.photo || '')))
           .map((p) => ({ photo: p.photo, rot: String(p.rot || '0deg').slice(0, 12), dx: num(p.dx), top: num(p.top) })));
       }
-      res.status(200).json({ ok: true, me: { name: p.name || '', showDay: !!p.showDay, showStickers: !!p.showStickers } });
+      res.status(200).json({ ok: true, me: { name: p.name || '', showDay: !!p.showDay, showStickers: !!p.showStickers, theme: p.theme || {} } });
       return;
     }
 
