@@ -11,7 +11,7 @@ import {
 // GET  /api/people?look=<uid>          -> their colours, title and background (yours with your own id)
 // PUT  /api/people { name?, showDay?, showStickers?, stickers?, pins?, photo?, theme? }
 // POST /api/people { action: follow | unfollow | approve | deny | remove, uid }
-// POST /api/people { action: ask, uid, date, text }          ask to add to their day
+// POST /api/people { action: ask, uid, date, text, kind? }   ask to add to their day, or (kind: collab) to work on something together
 // POST /api/people { action: ask_done, id }                  you added it, or said no
 // POST /api/people { action: session_new, title, uids }      start a collab session
 // POST /api/people { action: session_note, id, text }        write in one
@@ -209,7 +209,10 @@ export default async function handler(req, res) {
         }
         const asks = await getAsks();
         if (asks.filter((a) => a.to === uid).length >= 100) { res.status(409).json({ error: 'they have a lot waiting already' }); return; }
-        asks.push({ id: newId(), from: me, fromEmail: auth.email || null, to: uid, date, text, at: new Date().toISOString() });
+        asks.push({
+          id: newId(), from: me, fromEmail: auth.email || null, to: uid, date, text,
+          kind: body.kind === 'collab' ? 'collab' : 'task', at: new Date().toISOString(),
+        });
         await putAsks(asks);
         res.status(200).json({ ok: true });
         return;

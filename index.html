@@ -887,7 +887,11 @@
   }
   .metrics-detail .ln.was-moved .mk { color: var(--btn-blue); }
   .metrics-detail .ln.was-moved .tx { color: var(--muted); }
-  body.viewing-shared .lighten { display: none !important; }
+  body.viewing-shared .lighten, body.viewing-shared .day-inbox { display: none !important; }
+  /* Your own note on someone else's task is yours to take back. */
+  body.viewing-shared .task-notes .remove { display: inline-flex !important; }
+  .day-inbox { margin: -4px 0 14px; }
+  .day-inbox .section-heading { margin-top: 0; }
 
   /* A switch, since "shared mode" is a mode and not an action. */
   .shared-switch {
@@ -1083,8 +1087,8 @@
   body.viewing-shared .sub-add,
   body.viewing-shared .completed-toggle,
   body.viewing-shared .drag-hint { display: none !important; }
-  body.viewing-shared .checkbox { pointer-events: none; opacity: 0.75; }
-  body.viewing-shared li.task-item { cursor: default; }
+  body.viewing-shared .checkbox, body.viewing-shared .sub-box { pointer-events: none; opacity: 0.75; }
+  body.viewing-shared li.task-item { cursor: pointer; }
 
   #dayNotes { margin-top: 22px; }
   .note-row {
@@ -1100,7 +1104,14 @@
     font-size: 10px; color: var(--accent); margin-top: 3px;
     letter-spacing: 0.04em; word-break: break-word;
   }
-  .note-add { display: flex; gap: 8px; align-items: flex-end; margin-top: 10px; }
+  .note-add { display: flex; gap: 8px; align-items: flex-end; margin-top: 10px; flex-wrap: wrap; }
+  .task-notes { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border-light); }
+  .task-notes-head { font-size: 10px; color: var(--muted); letter-spacing: 0.06em; margin-bottom: 4px; }
+  .task-notes .note-row { align-items: center; }
+  .task-notes .note-row.is-step .note-text::before { content: "+ "; color: var(--accent); font-weight: 600; }
+  .task-notes .note-add textarea { flex: 1 1 100%; }
+  .task-note-acts { display: flex; gap: 6px; flex-wrap: wrap; }
+  .note-count { flex-shrink: 0; align-self: center; font-size: 10px; color: var(--accent); letter-spacing: 0.02em; }
   .note-add[hidden] { display: none; }
   .note-add textarea {
     flex: 1 1 auto; font-family: inherit; font-size: 12px; padding: 8px 10px;
@@ -1614,6 +1625,12 @@
     <div class="strip-hint" id="dayDragHint">drag a task to reorder it, or onto a day to move it</div>
     <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
 
+    <!-- Asks, collab requests and follow requests, where they're about: your day. -->
+    <div class="day-inbox" id="dayInbox" hidden>
+      <div class="section-heading">waiting on you</div>
+      <div id="dayInboxList"></div>
+    </div>
+
     <!-- How today feels. It changes how much the day tries to hold, nothing else. -->
     <div class="checkin" id="checkin">
       <span class="checkin-q">how's today feeling?</span>
@@ -1663,8 +1680,9 @@
         <button class="tray-reset" onclick="submitNote()">leave note</button>
       </div>
       <div class="note-add" id="askAdd" hidden>
-        <textarea id="askInput" rows="1" placeholder="ask them to add something to this day..."></textarea>
-        <button class="tray-reset" onclick="submitAsk()">ask</button>
+        <textarea id="askInput" rows="1" placeholder="ask them to add something, or to work on something together..."></textarea>
+        <button class="tray-reset" onclick="submitAsk()">ask to add</button>
+        <button class="tray-reset" onclick="submitAsk('collab')">ask to collab</button>
       </div>
       <div class="setting-note" id="noteMsg" hidden></div>
     </div>
@@ -2355,6 +2373,7 @@ function applyViewingChrome() {
 // through the week doesn't hammer the endpoint.
 let notes = [];
 let notesKey = null;
+let notesSig = '';
 let notesInFlight = false;
 
 function setNoteMsg(msg, tone) {
@@ -2392,7 +2411,13 @@ async function loadNotes(force) {
     const out = await noteFetch('GET', null, currentDate);
     if (out && out.ok) notes = out.data.comments || [];
     // Only redraw if the day hasn't moved on under us.
-    if (key === (viewingUid || 'mine') + '|' + currentDate) renderNotes();
+    if (key === (viewingUid || 'mine') + '|' + currentDate) {
+      const before = notesSig;
+      notesSig = notes.map(n => n.id).join(',');
+      renderNotes();
+      // Task rows carry a count, and an open card its thread: redraw both when it changed.
+      if (before !== notesSig) { renderDay(); refreshSubPop(); }
+    }
   } catch (e) {} finally { notesInFlight = false; }
 }
 
@@ -2404,14 +2429,16 @@ function renderNotes() {
   if (!wrap || !list) return;
 
   const guest = viewingShared();
+  // Notes about one task live on that task's card; this is the day as a whole.
+  const dayNotes = notes.filter(n => !n.taskId);
   // On your own day the section is only worth the space once somebody has said something.
-  wrap.hidden = !guest && notes.length === 0;
+  wrap.hidden = !guest && dayNotes.length === 0;
   add.hidden = !guest;
   document.getElementById('askAdd').hidden = !guest;
-  title.textContent = guest ? 'notes' : 'notes from others';
+  title.textContent = guest ? 'notes on the day' : 'notes on your day';
 
   list.innerHTML = '';
-  for (const note of notes) {
+  for (const note of dayNotes) {
     const row = document.createElement('div');
     row.className = 'note-row';
 
@@ -2434,13 +2461,13 @@ function renderNotes() {
 
     const who = document.createElement('div');
     who.className = 'note-who';
-    who.textContent = note.author + ' · ' + shortWhen(note.createdAt);
+    who.textContent = (note.mine ? 'you' : (note.authorName || note.author)) + ' · ' + shortWhen(note.createdAt);
     body.appendChild(who);
 
     row.appendChild(body);
 
     // Yours to clear on your own board; otherwise only your own words.
-    const mine = !guest || (account && note.author === account.email);
+    const mine = !guest || note.mine;
     if (mine) {
       const del = document.createElement('button');
       del.className = 'remove';
@@ -2563,18 +2590,40 @@ function renderPeople() {
   const reqs = document.getElementById('followRequests');
   const asks = document.getElementById('askList');
   reqs.innerHTML = ''; asks.innerHTML = '';
+  fillInbox(reqs, asks);
+  document.getElementById('peopleInbox').hidden = !people.requests.length && !people.asks.length;
+  const dayBox = document.getElementById('dayInbox');
+  const dayList = document.getElementById('dayInboxList');
+  if (dayBox && dayList) {
+    dayList.innerHTML = '';
+    fillInbox(dayList, dayList);
+    dayBox.hidden = viewingShared() || (!people.requests.length && !people.asks.length);
+  }
+  renderPeopleLists();
+}
+
+function fillInbox(reqs, asks) {
   people.requests.forEach(p => reqs.appendChild(personRow(p.name + ' wants to follow you', [
     ['yes', () => peopleAct('approve', p.uid)],
     ['no', () => peopleAct('deny', p.uid)],
   ])));
   people.asks.forEach(a => {
+    if (a.kind === 'collab') {
+      asks.appendChild(personRow(a.fromName + ' wants to collab on', [
+        ['start a session', () => acceptCollab(a)],
+        ['no', () => finishAsk(a.id)],
+      ], a.text));
+      return;
+    }
     const when = new Date(a.date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).toLowerCase();
     asks.appendChild(personRow(a.fromName + ' asked to add, for ' + when, [
       ['add it', () => acceptAsk(a)],
       ['no', () => finishAsk(a.id)],
     ], a.text));
   });
-  document.getElementById('peopleInbox').hidden = !people.requests.length && !people.asks.length;
+}
+
+function renderPeopleLists() {
 
   const following = document.getElementById('followingList');
   following.innerHTML = '';
@@ -2759,21 +2808,30 @@ async function acceptAsk(a) {
   if (a.date === currentDate) renderDay();
   await finishAsk(a.id);
 }
+async function acceptCollab(a) {
+  const out = await peopleFetch('POST', { action: 'session_new', title: a.text, uids: [a.from] });
+  if (!out || !out.ok) { setPeopleMsg((out && out.data.error) || "couldn't start that session", 'bad'); return; }
+  openSessions.add(out.data.id);
+  await finishAsk(a.id);
+  await loadPeople();
+}
 async function finishAsk(id) {
   people.asks = people.asks.filter(x => x.id !== id);
   renderPeople();
   try { await peopleFetch('POST', { action: 'ask_done', id }); } catch (e) {}
 }
 
-async function submitAsk() {
+async function submitAsk(kind) {
   const input = document.getElementById('askInput');
   const text = (input.value || '').trim();
   if (!text) { input.focus(); return; }
   try {
-    const out = await peopleFetch('POST', { action: 'ask', uid: viewingUid, date: currentDate, text });
+    const out = await peopleFetch('POST', { action: 'ask', kind, uid: viewingUid, date: currentDate, text });
     if (!out || !out.ok) { setNoteMsg((out && out.data.error) || "that didn't send", 'bad'); return; }
     input.value = '';
-    setNoteMsg('asked. it lands on their day when they say yes.', 'good');
+    setNoteMsg(kind === 'collab'
+      ? 'asked. if they say yes, a collab session opens for the two of you.'
+      : 'asked. it lands on their day when they say yes.', 'good');
   } catch (e) { setNoteMsg("couldn't reach the server", 'bad'); }
 }
 
@@ -3631,6 +3689,23 @@ async function refreshFromServer() {
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshFromServer(); });
 window.addEventListener('focus', refreshFromServer);
 
+// ---------- STAYING CURRENT WHILE OTHERS WORK ----------
+// Notes, asks and other people's boards change while this one sits open, and nothing
+// else would notice until the tab lost and regained focus. Every so often, while the
+// tab is actually visible, look again. Cheap enough at this size: a few small GETs.
+const LIVE_EVERY = 15000;
+async function lookAgain() {
+  if (document.hidden || !getToken()) return;
+  try {
+    await refreshFromServer();          // yours, or theirs if you're looking at them
+    await loadNotes(true);
+    await loadPeople();
+  } catch (e) {}
+}
+setInterval(lookAgain, LIVE_EVERY);
+// The practice page can say "look now" after it acts as someone, so a demo doesn't wait.
+window.addEventListener('message', (e) => { if (e.data === 'look-again') lookAgain(); });
+
 // ---------- KEEPING THE PAGE ITSELF CURRENT ----------
 // A phone keeps a Safari tab alive for weeks and restores it without ever asking for the
 // HTML again, so it can sit on a build from last week while syncing today's data quite
@@ -3792,10 +3867,16 @@ function buildItemLi(item, onToggle, onRemove, onDrop) {
   label.textContent = item.text;
   // Only used when no drag is attached; a dragged row taps through attachDrag's onTap.
   label.onclick = (e) => {
-    if (li.dataset.drag === 'on') return;
+    if (li.dataset.drag === 'on' || viewingShared()) return;
     e.stopPropagation();
     toggleSubPanel(item.id);
   };
+  // On someone else's board nothing drags, so the whole row is a tap that opens the
+  // card: their steps, the notes on it, and room to add yours.
+  li.addEventListener('click', (e) => {
+    if (!viewingShared() || e.target.closest('.remove')) return;
+    toggleSubPanel(item.id);
+  });
 
   const subs = item.subtasks || [];
   const count = document.createElement('span');
@@ -3811,6 +3892,14 @@ function buildItemLi(item, onToggle, onRemove, onDrop) {
   topRow.appendChild(caret);
   topRow.appendChild(label);
   if (subs.length) topRow.appendChild(count);
+  const noteCount = notes.filter(n => n.taskId === item.id).length;
+  if (noteCount) {
+    const nc = document.createElement('span');
+    nc.className = 'note-count';
+    nc.textContent = '✎ ' + noteCount;
+    nc.title = noteCount === 1 ? '1 note' : noteCount + ' notes';
+    topRow.appendChild(nc);
+  }
   const carriedFor = carriedDaysOf(item);
   if (carriedFor > 0 && !item.done) {
     const carried = document.createElement('span');
@@ -3875,8 +3964,105 @@ function refreshSubPop() {
     if (!titleEl.isContentEditable) titleEl.contentEditable = 'true';
   }
   const body = document.getElementById('subPopBody');
+  // Keep whatever's being typed in the note box across a redraw.
+  const draft = body.querySelector('.task-note-input');
+  const draftText = draft ? draft.value : '';
+  const hadFocus = draft && document.activeElement === draft;
   body.innerHTML = '';
   body.appendChild(buildSubPanel(item));
+  const onThisDay = (daysMap[currentDate] || []).some(i => i.id === item.id);
+  if (onThisDay) body.appendChild(buildTaskNotes(item, draftText, hadFocus));
+}
+
+// Notes on one task: who said what, and suggested steps the owner can take with a tap.
+// Guests can also ask to work on it together.
+function buildTaskNotes(item, draftText, focus) {
+  const guest = viewingShared();
+  const wrap = document.createElement('div');
+  wrap.className = 'task-notes';
+  wrap.onclick = (e) => e.stopPropagation();
+  const mine = notes.filter(n => n.taskId === item.id);
+  const head = document.createElement('div');
+  head.className = 'task-notes-head';
+  head.textContent = mine.length ? 'notes' : (guest ? 'leave a note on this' : 'no notes on this yet');
+  wrap.appendChild(head);
+
+  mine.forEach(n => {
+    const row = document.createElement('div');
+    row.className = 'note-row' + (n.kind === 'step' ? ' is-step' : '');
+    const bodyEl = document.createElement('div');
+    bodyEl.className = 'note-body';
+    const who = document.createElement('div');
+    who.className = 'note-who';
+    who.textContent = (n.mine ? 'you' : (n.authorName || n.author)) + (n.kind === 'step' ? ' suggested a step' : ' left a note') + ' · ' + shortWhen(n.createdAt);
+    const text = document.createElement('div');
+    text.className = 'note-text';
+    text.textContent = n.text;
+    bodyEl.append(who, text);
+    row.appendChild(bodyEl);
+    // Only the owner turns a suggestion into a step.
+    if (n.kind === 'step' && !guest) {
+      const take = document.createElement('button');
+      take.className = 'tray-reset';
+      take.textContent = 'add as a step';
+      take.onclick = async () => { addSubtask(item.id, n.text); await deleteNote(n.id); refreshSubPop(); };
+      row.appendChild(take);
+    }
+    if (n.mine || !guest) {
+      const del = document.createElement('button');
+      del.className = 'remove';
+      del.textContent = '×';
+      del.title = n.mine ? 'take it back' : 'clear this note';
+      del.onclick = async () => { await deleteNote(n.id); refreshSubPop(); };
+      row.appendChild(del);
+    }
+    wrap.appendChild(row);
+  });
+
+  const add = document.createElement('div');
+  add.className = 'note-add';
+  const ta = document.createElement('textarea');
+  ta.className = 'task-note-input';
+  ta.rows = 2;
+  ta.placeholder = guest ? 'a note, or a step they could take...' : 'a note to yourself, or a reply...';
+  ta.value = draftText || '';
+  add.appendChild(ta);
+  const acts = document.createElement('div');
+  acts.className = 'task-note-acts';
+  const send = async (kind) => {
+    const t = ta.value.trim();
+    if (!t) { ta.focus(); return; }
+    const out = await noteFetch('POST', { date: currentDate, text: t, taskId: item.id, kind });
+    if (!out || !out.ok) { setNoteMsg((out && out.data.error) || "that didn't send", 'bad'); return; }
+    ta.value = '';
+    notes.push(out.data.comment);
+    renderDay();
+    refreshSubPop();
+  };
+  const noteBtn = document.createElement('button');
+  noteBtn.className = 'tray-reset';
+  noteBtn.textContent = 'leave note';
+  noteBtn.onclick = () => send('note');
+  acts.appendChild(noteBtn);
+  if (guest) {
+    const stepBtn = document.createElement('button');
+    stepBtn.className = 'tray-reset';
+    stepBtn.textContent = 'suggest as a step';
+    stepBtn.onclick = () => send('step');
+    const collab = document.createElement('button');
+    collab.className = 'tray-reset';
+    collab.textContent = 'ask to collab on this';
+    collab.onclick = async () => {
+      const out = await peopleFetch('POST', { action: 'ask', kind: 'collab', uid: viewingUid, date: currentDate, text: item.text });
+      collab.textContent = out && out.ok ? 'asked ✓' : "couldn't ask";
+      collab.disabled = true;
+    };
+    acts.append(stepBtn, collab);
+  }
+  add.appendChild(acts);
+  wrap.appendChild(add);
+  if (focus) setTimeout(() => ta.focus(), 0);
+  return wrap;
 }
 
 // ---------- IDEAS ----------
@@ -4512,8 +4698,9 @@ function buildSubPanel(item) {
   return panel;
 }
 
+// Steps live on tasks and on backlog items alike.
 function findDayItem(id) {
-  return (daysMap[currentDate] || []).find(i => i.id === id);
+  return (daysMap[currentDate] || []).find(i => i.id === id) || findItemById(id);
 }
 
 function addSubtask(itemId, text) {

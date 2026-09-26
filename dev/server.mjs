@@ -10,6 +10,9 @@ import { dreamyPng } from './png.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.PORT || 4325);
+// Each person in the side-by-side view gets their own port: a different origin means a
+// separate sign-in, so four of them can be open at once in one browser.
+const SEAT_PORTS = { you: PORT + 1, mika: PORT + 2, jo: PORT + 3, ren: PORT + 4 };
 Object.assign(process.env, {
   AUTH_SECRET: crypto.randomBytes(24).toString('hex'),
   OWNER_EMAIL: 'you@test.localhost',
@@ -52,7 +55,14 @@ const PEOPLE = [
     blurb: 'you: the owner account, with your eight polaroids',
     profile: { showDay: true, showStickers: true },
     state: {
-      days: { [today]: [task('review venice feedback'), task('ship reverify flow'), task('call the vet', 'personal')] },
+      days: { [today]: [
+        { ...task('review venice feedback'), id: 'fay-venice' },
+        { ...task('ship reverify flow'), id: 'fay-reverify', subtasks: [
+          { id: 'fs1', text: 'fix the retry copy', done: true },
+          { id: 'fs2', text: 'test on a slow network', done: false },
+        ] },
+        task('call the vet', 'personal'),
+      ] },
       backlog: [task('overhaul toasts'), task('redesign auth email')],
       manifesto: [{ id: id(), text: 'make things that feel alive', bullets: [{ id: id(), text: 'the difference between a tool and a toy' }] }],
       checkins: {},
@@ -148,9 +158,66 @@ for (const k of ['mika', 'jo', 'ren']) {
 for (const k of ['mika', 'jo']) await call('people', 'POST', { token: tokens.you, body: { action: 'approve', uid: uids[k] } });
 
 await call('people', 'POST', { token: tokens.mika, body: { action: 'ask', uid: 'owner', date: today, text: 'send mika the launch moodboard' } });
+// Something already said about your day, so there's a thread to look at from the start.
+await call('comments', 'POST', { token: tokens.jo, query: { uid: 'owner' }, body: { date: today, text: 'maybe venice first? they asked twice' } });
+await call('comments', 'POST', { token: tokens.mika, query: { uid: 'owner' }, body: { date: today, taskId: 'fay-reverify', text: 'the retry state looked great on my phone' } });
 const sess = await call('people', 'POST', { token: tokens.mika, body: { action: 'session_new', title: 'launch week', uids: ['owner', uids.jo] } });
 await call('people', 'POST', { token: tokens.mika, body: { action: 'session_note', id: sess.data.id, text: 'hero options by wednesday?' } });
 await call('people', 'POST', { token: tokens.jo, body: { action: 'session_note', id: sess.data.id, text: 'copy freeze thursday, then QA' } });
+
+// ---------- things to make happen ----------
+// Each one acts as a pretend person, so you can watch it land on your side.
+const ACTIONS = {
+  'jo-day-note': ['Jo leaves a note on your day', () =>
+    call('comments', 'POST', { token: tokens.jo, query: { uid: 'owner' }, body: { date: today, text: 'can we swap standup to 11 tomorrow?' } })],
+  'mika-task-note': ['Mika leaves a note on "ship reverify flow"', () =>
+    call('comments', 'POST', { token: tokens.mika, query: { uid: 'owner' }, body: { date: today, taskId: 'fay-reverify', text: 'loop me in before it ships, I want to screenshot it' } })],
+  'jo-step': ['Jo suggests a step on "ship reverify flow"', () =>
+    call('comments', 'POST', { token: tokens.jo, query: { uid: 'owner' }, body: { date: today, taskId: 'fay-reverify', kind: 'step', text: 'write the release note' } })],
+  'mika-ask': ['Mika asks to add something to your day', () =>
+    call('people', 'POST', { token: tokens.mika, body: { action: 'ask', uid: 'owner', date: today, text: 'review the hero options with me' } })],
+  'ren-collab': ['Ren asks to collab on "review venice feedback"', () =>
+    call('people', 'POST', { token: tokens.ren, body: { action: 'ask', kind: 'collab', uid: 'owner', date: today, text: 'review venice feedback' } })],
+  'jo-fried-to-okay': ['Jo feels better: fried to okay', async () => {
+    const st = (await call('sync', 'GET', { token: tokens.jo })).data;
+    st.checkins = { ...(st.checkins || {}), [today]: { stress: 1 } };
+    return call('sync', 'PUT', { token: tokens.jo, body: st });
+  }],
+  'mika-finishes': ['Mika ticks off "type pairing for the deck"', async () => {
+    const st = (await call('sync', 'GET', { token: tokens.mika })).data;
+    (st.days[today] || []).forEach((t) => { if (t.text === 'type pairing for the deck') t.done = true; });
+    return call('sync', 'PUT', { token: tokens.mika, body: st });
+  }],
+};
+
+function allPage() {
+  const seats = PEOPLE.map((p) => `
+    <section><header><b>${p.name}</b><a href="http://localhost:${SEAT_PORTS[p.key]}/dev/as/${p.key}" target="_blank">open alone</a></header>
+    <iframe src="http://localhost:${SEAT_PORTS[p.key]}/dev/as/${p.key}"></iframe></section>`).join('');
+  const buttons = Object.entries(ACTIONS).map(([k, [label]]) => `<button onclick="act('${k}')">${label}</button>`).join('');
+  return `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>everyone at once</title>
+<style>
+  body { margin: 0; font: 13px/1.4 -apple-system, system-ui, sans-serif; background: #e4e2dc; }
+  .bar { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 12px; background: #f2f5f7; border-bottom: 1px solid #c7dcec; }
+  .bar b { margin-right: 6px; } .bar button { font: inherit; font-size: 12px; padding: 5px 10px; border-radius: 16px; border: 1px solid #9dc3e0; background: #fff; cursor: pointer; }
+  .bar button:hover { background: #d9e6ee; } .bar .said { color: #3b7ea8; margin-left: 6px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 10px; padding: 10px; }
+  section { background: #f2f5f7; border: 1px solid #c7dcec; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; }
+  header { display: flex; justify-content: space-between; padding: 6px 10px; font-size: 12px; } header a { color: #75899a; }
+  iframe { border: 0; width: 100%; height: 78vh; background: #edece7; }
+</style>
+<div class="bar"><b>make something happen:</b>${buttons}<span class="said" id="said"></span></div>
+<div class="grid">${seats}</div>
+<script>
+  async function act(k) {
+    const r = await fetch('/dev/act?what=' + k, { method: 'POST' }).then(r => r.json());
+    document.getElementById('said').textContent = r.ok ? 'done: ' + r.label : 'that did not work';
+    // Tell every board to look again now rather than on its next tick.
+    document.querySelectorAll('iframe').forEach(f => f.contentWindow.postMessage('look-again', '*'));
+  }
+</script>`;
+}
 
 // ---------- the switcher ----------
 function devPage() {
@@ -171,6 +238,7 @@ function devPage() {
 </style>
 <main>
   <h1>practice accounts</h1>
+  <p><a href="/dev/all"><b>everyone at once →</b></a> all four side by side, with buttons that act as them.</p>
   <p>a local copy of the app with pretend people. nothing here touches the real site, and it all resets when the server restarts. come back to this page to switch who you are.</p>
   ${rows}
 </main>
@@ -187,9 +255,30 @@ function devPage() {
 }
 
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.png': 'image/png', '.json': 'application/json' };
-http.createServer(async (req, res) => {
+const app = async (req, res) => {
   const u = new URL(req.url, 'http://local');
   if (u.pathname === '/dev') { res.setHeader('content-type', 'text/html'); res.end(devPage()); return; }
+  if (u.pathname === '/dev/all') { res.setHeader('content-type', 'text/html'); res.end(allPage()); return; }
+  if (u.pathname === '/dev/act' && req.method === 'POST') {
+    const a = ACTIONS[u.searchParams.get('what')];
+    const out = a ? await a[1]() : null;
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ ok: !!out && out.status < 400, label: a ? a[0] : null }));
+    return;
+  }
+  const seat = /^\/dev\/as\/(\w+)$/.exec(u.pathname);
+  if (seat && tokens[seat[1]]) {
+    const p = PEOPLE.find((x) => x.key === seat[1]);
+    res.setHeader('content-type', 'text/html');
+    res.end(`<script>
+      localStorage.clear();
+      localStorage.setItem('tracker:token:v1', ${JSON.stringify(tokens[seat[1]])});
+      localStorage.setItem('tracker:account:v1', ${JSON.stringify(JSON.stringify({ email: p.email, isOwner: p.key === 'you' }))});
+      localStorage.setItem('sharedMode', '1');
+      location.replace('/');
+    </script>`);
+    return;
+  }
   const m = /^\/api\/(\w+)$/.exec(u.pathname);
   if (m) {
     const handler = routes[m[1]];
@@ -207,4 +296,6 @@ http.createServer(async (req, res) => {
     res.setHeader('content-type', TYPES[path.extname(file)] || 'application/octet-stream');
     res.end(data);
   });
-}).listen(PORT, () => console.log(`practice copy on http://localhost:${PORT}/dev`));
+};
+http.createServer(app).listen(PORT, () => console.log(`practice copy on http://localhost:${PORT}/dev  (everyone at once: /dev/all)`));
+for (const port of Object.values(SEAT_PORTS)) http.createServer(app).listen(port);
