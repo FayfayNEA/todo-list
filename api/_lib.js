@@ -155,20 +155,30 @@ export const apiToken = (user) => signToken({ u: user.id, e: user.email || null,
 export const isOwner = (uid) => uid === OWNER_UID;
 
 export const findUser = (email) => readJson(userPath(email), null);
+export const saveUser = (user) => writeJson(userPath(user.email), user);
 
-export async function createUser(email, password) {
+// Which email, if any, has taken the original list. Only ever one: once it's claimed,
+// signing up with OWNER_EMAIL as well can't attach a second address to the same list.
+const OWNER_CLAIM = 'users/owner.json';
+export const ownerClaim = () => readJson(OWNER_CLAIM, null);
+
+export async function createUser(email, password, { claimOwner = false } = {}) {
   const clean = normalizeEmail(email);
   const owner = ownerEmail();
+  const claimed = await ownerClaim();
   const salt = crypto.randomBytes(16).toString('hex');
+  // Claiming the owner id is how the original list becomes this account's list: either
+  // by signing up with OWNER_EMAIL, or from a browser already holding the passphrase.
+  const takesOwner = !claimed && (claimOwner || (owner && clean === owner));
   const user = {
-    // Claiming the owner id is how the original list becomes this account's list.
-    id: owner && clean === owner ? OWNER_UID : crypto.randomBytes(9).toString('hex'),
+    id: takesOwner ? OWNER_UID : crypto.randomBytes(9).toString('hex'),
     email: clean,
     salt,
     hash: hashPassword(password, salt),
     created: new Date().toISOString(),
   };
   await writeJson(userPath(clean), user);
+  if (takesOwner) await writeJson(OWNER_CLAIM, { email: clean, at: user.created });
   return user;
 }
 

@@ -961,7 +961,23 @@
   }
   .wrap.card-photo { background-image: var(--card-img); background-size: cover; background-position: center; }
   .wrap.card-photo .content { background: hsl(var(--hue) calc(22% * var(--sat)) 96% / 0.62); }
-  .card-choices { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+  .card-choices { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .look-row { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+  .look-label { width: 118px; font-size: 11px; color: var(--muted); letter-spacing: 0.04em; }
+  .look-acts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; flex: 1; min-width: 200px; }
+  .card-preview-sketch { background-image: var(--sketch-bg); background-size: 400px auto; background-position: right -60px top -30px; }
+  .card-preview-plain { background: var(--card); }
+  .card-preview-glass { background: linear-gradient(135deg, hsl(var(--hue) 40% 90% / 0.6), hsl(var(--hue) 30% 97% / 0.3)); }
+  .card-preview-photo { background-size: cover; background-position: center; }
+  .twostep-setup { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; margin-bottom: 8px; }
+  .twostep-qr { flex-shrink: 0; width: 160px; height: 160px; background: #fff; border-radius: 8px; padding: 6px; border: 1px solid var(--border-light); }
+  .twostep-qr svg { width: 100%; height: 100%; display: block; }
+  .twostep-setup .setting-note { flex: 1; min-width: 200px; line-height: 1.8; }
+  .backup-codes {
+    white-space: pre; font-family: ui-monospace, Menlo, monospace; font-size: 13px; letter-spacing: 0.06em;
+    background: var(--card); border: 1px solid var(--border-light); border-radius: 8px; padding: 10px 14px;
+    margin: 6px 0 10px; column-count: 2; max-width: 320px;
+  }
   .card-choice {
     font: inherit; font-size: 11px; padding: 5px 10px; border-radius: 20px; cursor: pointer;
     background: var(--card); color: var(--muted); border: 1px solid var(--border-light);
@@ -1016,7 +1032,31 @@
   .group-person .ln.is-done .tx { text-decoration: line-through; color: var(--muted); }
   .group-person .quiet { font-size: 11px; color: var(--muted); }
 
-  .person-row .invite-act + .invite-act { margin-left: 4px; }
+  .person-card {
+    display: flex; align-items: center; gap: 10px; margin-top: 6px;
+    background: var(--card); border: 1px solid var(--border-light); border-radius: 10px;
+    padding: 8px 8px 8px 10px; font-size: 12px;
+    animation: taskIn 0.28s cubic-bezier(.22,.9,.32,1);
+    transition: border-color 0.15s ease, transform 0.15s cubic-bezier(.2,.8,.3,1.2);
+  }
+  .person-card:hover { border-color: var(--border); transform: translateY(-1px); }
+  .person-dot {
+    flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%;
+    display: grid; place-items: center; font-weight: 600; font-size: 12px;
+    background: var(--highlight); color: var(--accent); border: 1px solid var(--border-light);
+  }
+  .person-name { flex: 1; min-width: 0; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .person-extra { font-weight: 400; color: var(--muted); margin-left: 6px; }
+  .person-acts { display: flex; gap: 6px; flex-shrink: 0; align-items: center; }
+  .person-btn {
+    font: inherit; font-size: 11px; padding: 5px 11px; border-radius: 20px; cursor: pointer;
+    background: var(--btn-blue); color: #fff; border: 1px solid var(--btn-blue);
+    transition: transform 0.15s cubic-bezier(.2,.8,.3,1.4), background 0.15s ease;
+  }
+  .person-btn:hover { background: var(--btn-blue-hover); transform: scale(1.05); }
+  .person-btn.quiet { background: transparent; color: var(--muted); border-color: var(--border-light); }
+  .person-btn.quiet:hover { color: var(--text); border-color: var(--border); background: transparent; }
+  .person-status { font-size: 10px; color: var(--muted); padding: 3px 9px; border-radius: 20px; background: var(--highlight); letter-spacing: 0.04em; }
   .ask-text { color: var(--text); }
   .session-new { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
   .session-new button { align-self: flex-start; }
@@ -1482,6 +1522,8 @@
            placeholder="email" onkeydown="if(event.key==='Enter')submitAuth()">
     <input type="password" id="authPassword" autocomplete="current-password"
            placeholder="password" onkeydown="if(event.key==='Enter')submitAuth()">
+    <input type="text" id="authCode" autocomplete="one-time-code" inputmode="numeric"
+           placeholder="6-digit code, or a backup code" hidden onkeydown="if(event.key==='Enter')submitAuth()">
     <input type="text" id="authInvite" autocomplete="off" autocapitalize="none"
            autocorrect="off" spellcheck="false"
            placeholder="invite code" hidden onkeydown="if(event.key==='Enter')submitAuth()">
@@ -1810,18 +1852,29 @@
         <input class="quote-who-input" id="lookTitle" placeholder="the manifesto" maxlength="40" autocomplete="off" spellcheck="false">
       </div>
       <div class="swatches" id="lookSwatches"></div>
-      <div class="setting-row" style="justify-content:flex-start">
+      <!-- Two matching rows: what's behind everything, and the tracker itself. -->
+      <div class="look-row">
+        <div class="look-label">background</div>
         <div class="bg-preview" id="lookBgPreview"></div>
-        <button class="tray-reset" onclick="document.getElementById('lookBgInput').click()">choose a background</button>
-        <button class="tray-reset" id="lookBgRemove" onclick="setLookBackground(null)" hidden>remove it</button>
+        <div class="look-acts">
+          <button class="tray-reset" onclick="document.getElementById('lookBgInput').click()">choose a photo</button>
+          <button class="tray-reset" id="lookBgRemove" onclick="setLookBackground(null)" hidden>remove</button>
+        </div>
         <input type="file" id="lookBgInput" accept="image/*" hidden>
       </div>
-      <div class="card-choices" id="lookCard">
-        <span class="setting-note" style="margin:0">the card:</span>
-        <button class="card-choice" data-card="">paper sketch</button>
-        <button class="card-choice" data-card="plain">plain</button>
-        <button class="card-choice" data-card="glass">see-through</button>
-        <button class="card-choice" data-card="photo">a picture…</button>
+      <div class="look-row">
+        <div class="look-label">tracker background</div>
+        <div class="bg-preview card-preview" id="lookCardPreview"></div>
+        <div class="look-acts">
+          <button class="tray-reset" onclick="document.getElementById('lookCardInput').click()">choose a photo</button>
+          <button class="tray-reset" id="lookCardRemove" onclick="saveLook({ card: null, cardBg: null }, undefined, null)" hidden>remove</button>
+          <div class="card-choices" id="lookCard">
+            <button class="card-choice" data-card="">paper sketch</button>
+            <button class="card-choice" data-card="plain">plain</button>
+            <button class="card-choice" data-card="glass">see-through</button>
+            <button class="card-choice" data-card="photo" hidden>photo</button>
+          </div>
+        </div>
         <input type="file" id="lookCardInput" accept="image/*" hidden>
       </div>
       <div class="setting-note" id="lookMsg" hidden></div>
@@ -1833,25 +1886,32 @@
         <div class="setting-value" id="settingsAccount">signed in on this device</div>
         <button class="tray-reset" onclick="signOut()">log out</button>
       </div>
+      <!-- Only on the old passphrase: give this list an email and password, so it can be
+           opened on any device. The list itself isn't touched. -->
+      <div id="claimBox" hidden>
+        <div class="setting-note">
+          you're signed in with the old passphrase. make this an email account and your
+          whole list comes with it, so you can sign in on any phone.
+        </div>
+        <div class="setting-row" style="justify-content:flex-start">
+          <input class="quote-who-input" id="claimEmail" type="email" placeholder="your email"
+                 autocomplete="email" autocapitalize="none" autocorrect="off" spellcheck="false">
+          <input class="quote-who-input" id="claimPassword" type="password" placeholder="a password (8+ characters)"
+                 autocomplete="new-password">
+          <button class="tray-reset" id="claimGo" onclick="claimAccount()">make my account</button>
+        </div>
+        <div class="setting-note" id="claimMsg" hidden></div>
+      </div>
     </div>
 
-    <div class="setting-group" id="teamGroup" hidden>
-      <div class="setting-title">team</div>
-      <div class="setting-note">
-        hand someone your day and they can read it and leave notes on it, like what to do
-        first or what to push to tomorrow. they can't change anything: moving it is still
-        yours alone. only the work half travels, so your personal list, your ideas and your
-        quotes stay yours. take it back whenever you like.
+    <div class="setting-group" id="twoStepGroup" hidden>
+      <div class="setting-title">two-step sign in</div>
+      <div class="setting-note" id="twoStepNote">
+        after your password, a 6-digit code from an authenticator app on your phone
+        (apple passwords, google authenticator, 1password). someone with your password still can't get in.
       </div>
-      <div class="setting-row">
-        <input class="quote-who-input" id="shareEmail" type="email" placeholder="their email"
-               autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
-        <button class="tray-reset" id="shareAdd" onclick="addShare()">share my day</button>
-      </div>
-      <div class="setting-note" id="shareMsg" hidden></div>
-      <div id="sharingWithList"></div>
-      <div class="setting-subtitle" id="sharedWithMeTitle" hidden>shared with you</div>
-      <div id="sharedWithMeList"></div>
+      <div id="twoStepBody"></div>
+      <div class="setting-note" id="twoStepMsg" hidden></div>
     </div>
 
     <div class="setting-group" id="inviteGroup" hidden>
@@ -1894,8 +1954,7 @@
     <div class="setting-group">
       <div class="setting-title">your profile</div>
       <div class="setting-note">
-        people find you by this name, ask to follow, and see only what you switch on below,
-        and only once you've said yes to them. work only: your personal half never shows.
+        your name is how people find you. they see only what you switch on, once you say yes. never your personal list.
       </div>
       <div class="setting-row">
         <input class="quote-who-input" id="profileName" placeholder="your name, so people can find you"
@@ -1931,7 +1990,7 @@
 
     <div class="setting-group">
       <div class="setting-title">collab sessions</div>
-      <div class="setting-note">a page of notes shared with people in your group, for working something out together.</div>
+      <div class="setting-note">shared notes with people in your group.</div>
       <div id="sessionList"></div>
       <div class="session-new" id="sessionNew">
         <input class="quote-who-input" id="sessionTitle" placeholder="what's it about?" maxlength="80" autocomplete="off">
@@ -2154,6 +2213,8 @@ async function submitAuth() {
   const email = (document.getElementById('authEmail').value || '').trim();
   const password = document.getElementById('authPassword').value || '';
   const invite = (document.getElementById('authInvite').value || '').trim();
+  const codeEl = document.getElementById('authCode');
+  const code = codeEl && !codeEl.hidden ? (codeEl.value || '').trim() : '';
   if (!email || !password) { setAuthMsg('email and password, please', true); return; }
 
   const btn = document.getElementById('authSubmit');
@@ -2164,13 +2225,23 @@ async function submitAuth() {
     const res = await fetch('/api/auth', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: authMode, email, password, invite }),
+      body: JSON.stringify({ action: authMode, email, password, invite, code: code || undefined }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.token) {
+      // Right password, and two-step is on: ask for the code in the same card.
+      if (data.need2fa && codeEl) {
+        const first = codeEl.hidden;
+        codeEl.hidden = false;
+        if (first) codeEl.value = '';
+        setTimeout(() => codeEl.focus(), 0);
+        setAuthMsg(data.error || 'enter the code from your authenticator app', !first);
+        return;
+      }
       setAuthMsg(data.error || "that didn't work", true);
       return;
     }
+    if (codeEl) { codeEl.value = ''; codeEl.hidden = true; }
     signInWith(data);
   } catch (e) {
     setAuthMsg("couldn't reach the server, try again", true);
@@ -2229,7 +2300,9 @@ function renderAccount() {
   if (!who) return;
   who.textContent = account && account.email
     ? account.email
-    : (getToken() ? 'signed in on this device' : 'not signed in');
+    : (getToken() ? 'signed in with the old passphrase' : 'not signed in');
+  const claim = document.getElementById('claimBox');
+  if (claim) claim.hidden = !(getToken() && !(account && account.email));
 
   // No token to show while this browser is still on the pre-accounts passphrase.
   const has = !!(account && account.apiToken);
@@ -2240,6 +2313,153 @@ function renderAccount() {
   if (none) none.hidden = has;
   if (row && !has) row.hidden = true;
   if (row && !row.hidden) document.getElementById('apiTokenInput').value = account.apiToken;
+}
+
+// ---------- two-step sign in ----------
+async function authAction(body) {
+  const res = await fetch('/api/auth', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getToken() },
+    body: JSON.stringify(body),
+  });
+  return { ok: res.ok, data: await res.json().catch(() => ({})) };
+}
+function setTwoStepMsg(t, tone) {
+  const el = document.getElementById('twoStepMsg');
+  el.textContent = t || ''; el.hidden = !t;
+  el.className = 'setting-note' + (tone ? ' ' + tone : '');
+}
+function twoStepCodeRow(label, onGo) {
+  const row = document.createElement('div');
+  row.className = 'setting-row';
+  row.style.justifyContent = 'flex-start';
+  const input = document.createElement('input');
+  input.className = 'quote-who-input';
+  input.placeholder = '6-digit code';
+  input.inputMode = 'numeric';
+  input.autocomplete = 'one-time-code';
+  input.style.maxWidth = '180px';
+  const btn = document.createElement('button');
+  btn.className = 'tray-reset';
+  btn.textContent = label;
+  const go = async () => { btn.disabled = true; try { await onGo(input.value.trim()); } finally { btn.disabled = false; } };
+  btn.onclick = go;
+  input.onkeydown = (e) => { if (e.key === 'Enter') go(); };
+  row.append(input, btn);
+  return row;
+}
+
+async function loadTwoStep() {
+  const group = document.getElementById('twoStepGroup');
+  if (!group) return;
+  group.hidden = !(account && account.email);
+  if (group.hidden) return;
+  const body = document.getElementById('twoStepBody');
+  const out = await authAction({ action: '2fa_status' }).catch(() => null);
+  if (!out || !out.ok) return;
+  body.innerHTML = '';
+  setTwoStepMsg('');
+  if (out.data.on) {
+    const st = document.createElement('div');
+    st.className = 'setting-value';
+    st.textContent = 'on · ' + out.data.backupLeft + ' backup code' + (out.data.backupLeft === 1 ? '' : 's') + ' left';
+    body.appendChild(st);
+    const note = document.createElement('div');
+    note.className = 'setting-note';
+    note.style.marginTop = '8px';
+    note.textContent = 'to turn it off, enter a code from the app (or a backup code):';
+    body.appendChild(note);
+    body.appendChild(twoStepCodeRow('turn off', async (code) => {
+      const r = await authAction({ action: '2fa_disable', code });
+      if (!r.ok) { setTwoStepMsg(r.data.error || "that didn't work", 'bad'); return; }
+      await loadTwoStep();
+      setTwoStepMsg('two-step sign in is off.', 'good');
+    }));
+    return;
+  }
+  const start = document.createElement('button');
+  start.className = 'tray-reset';
+  start.textContent = 'turn it on';
+  start.onclick = startTwoStep;
+  body.appendChild(start);
+}
+
+async function startTwoStep() {
+  const body = document.getElementById('twoStepBody');
+  const out = await authAction({ action: '2fa_setup' });
+  if (!out.ok) { setTwoStepMsg(out.data.error || "that didn't work", 'bad'); return; }
+  body.innerHTML = '';
+  const steps = document.createElement('div');
+  steps.className = 'twostep-setup';
+  const qr = document.createElement('div');
+  qr.className = 'twostep-qr';
+  qr.innerHTML = out.data.qr;          // an SVG the server drew from the setup link
+  const side = document.createElement('div');
+  side.className = 'setting-note';
+  side.innerHTML = '1. scan this with your authenticator app, or on this phone <a class="invite-act" id="twoStepLink">add it to an app</a>.<br>'
+    + '2. or type the key in by hand: <code id="twoStepKey"></code><br>3. then enter the code it shows:';
+  steps.append(qr, side);
+  body.appendChild(steps);
+  side.querySelector('#twoStepLink').href = out.data.otpauth;
+  side.querySelector('#twoStepKey').textContent = out.data.secret.replace(/(.{4})/g, '$1 ').trim();
+  body.appendChild(twoStepCodeRow('confirm', async (code) => {
+    const r = await authAction({ action: '2fa_enable', code });
+    if (!r.ok) { setTwoStepMsg(r.data.error || "that didn't work", 'bad'); return; }
+    showBackupCodes(r.data.backupCodes);
+  }));
+}
+
+function showBackupCodes(codes) {
+  const body = document.getElementById('twoStepBody');
+  body.innerHTML = '';
+  setTwoStepMsg('two-step sign in is on.', 'good');
+  const note = document.createElement('div');
+  note.className = 'setting-note';
+  note.textContent = "backup codes, for if you lose your phone. each works once. save them somewhere safe now: they won't be shown again.";
+  const list = document.createElement('div');
+  list.className = 'backup-codes';
+  list.textContent = codes.join('\n');
+  const copy = document.createElement('button');
+  copy.className = 'tray-reset';
+  copy.textContent = 'copy them';
+  copy.onclick = () => { navigator.clipboard.writeText(codes.join('\n')).then(() => { copy.textContent = 'copied'; }).catch(() => {}); };
+  const done = document.createElement('button');
+  done.className = 'tray-reset';
+  done.textContent = "i've saved them";
+  done.onclick = loadTwoStep;
+  const row = document.createElement('div');
+  row.className = 'setting-row';
+  row.style.justifyContent = 'flex-start';
+  row.append(copy, done);
+  body.append(note, list, row);
+}
+
+async function claimAccount() {
+  const email = (document.getElementById('claimEmail').value || '').trim();
+  const password = document.getElementById('claimPassword').value || '';
+  const msg = document.getElementById('claimMsg');
+  const btn = document.getElementById('claimGo');
+  const say = (t, tone) => { msg.textContent = t; msg.hidden = !t; msg.className = 'setting-note' + (tone ? ' ' + tone : ''); };
+  if (!email || !password) { say('an email and a password, please', 'bad'); return; }
+  // Anything typed but not yet saved goes up first, under the passphrase it was typed with.
+  if (pushTimer || pushFailed) { clearTimeout(pushTimer); pushTimer = null; await pushState(); }
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getToken() },
+      body: JSON.stringify({ action: 'claim', email, password }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.token) { say(data.error || "that didn't work", 'bad'); return; }
+    document.getElementById('claimPassword').value = '';
+    signInWith(data);
+    say('done. sign in with ' + email + ' on any device.', 'good');
+  } catch (e) {
+    say("couldn't reach the server", 'bad');
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ---------- sharing your day ----------
@@ -2663,27 +2883,35 @@ async function loadPeople() {
   } catch (e) {}
 }
 
+// A person as a small card: an initial, their name, and pill buttons. An action with no
+// handler is a status ("asked", "following"); leaving or removing is the quiet outline one.
+const QUIET_ACTIONS = new Set(['unfollow', 'remove']);
 function personRow(name, actions, extra) {
-  const row = document.createElement('div');
-  row.className = 'invite-row person-row';
-  const who = document.createElement('span');
-  who.className = 'invite-for';
+  const card = document.createElement('div');
+  card.className = 'person-card';
+  const dot = document.createElement('span');
+  dot.className = 'person-dot';
+  dot.textContent = (String(name || '?').trim()[0] || '?').toLowerCase();
+  const who = document.createElement('div');
+  who.className = 'person-name';
   who.textContent = name;
   if (extra) {
     const x = document.createElement('span');
-    x.className = 'ask-text';
+    x.className = 'person-extra';
     x.textContent = extra;
-    who.append(': ', x);
+    who.appendChild(x);
   }
-  row.appendChild(who);
+  const acts = document.createElement('div');
+  acts.className = 'person-acts';
   actions.forEach(([label, fn]) => {
-    const a = document.createElement('span');
-    a.className = 'invite-act';
-    a.textContent = label;
-    if (fn) a.onclick = fn; else a.style.cursor = 'default';
-    row.appendChild(a);
+    const b = document.createElement(fn ? 'button' : 'span');
+    b.textContent = label;
+    b.className = !fn ? 'person-status' : QUIET_ACTIONS.has(label) ? 'person-btn quiet' : 'person-btn';
+    if (fn) b.onclick = fn;
+    acts.appendChild(b);
   });
-  return row;
+  card.append(dot, who, acts);
+  return card;
 }
 
 function renderPeople() {
@@ -2765,8 +2993,8 @@ function renderPeopleLists() {
   people.following.forEach(p => {
     const acts = [];
     if (p.status === 'pending') acts.push(['asked', null]);
-    else if (p.showDay || p.showStickers) acts.push(['open their board', () => openSharedBoard(p.uid, p.name)]);
-    else acts.push(["hasn't shared anything", null]);
+    else if (p.showDay || p.showStickers) acts.push(['open board', () => openSharedBoard(p.uid, p.name)]);
+    else acts.push(['nothing shared yet', null]);
     acts.push(['unfollow', () => peopleAct('unfollow', p.uid)]);
     following.appendChild(personRow(p.name, acts));
   });
@@ -3323,7 +3551,17 @@ function renderLookControls() {
   if (rm) rm.hidden = !look.bg;
   document.querySelectorAll('#lookCard .card-choice').forEach(b => {
     b.classList.toggle('on', (b.dataset.card || '') === (look.theme.card || ''));
+    // "photo" only makes sense once there's one to go back to.
+    if (b.dataset.card === 'photo') b.hidden = !look.cardBg;
   });
+  const cardPrev = document.getElementById('lookCardPreview');
+  if (cardPrev) {
+    const style = look.theme.card || '';
+    cardPrev.className = 'bg-preview card-preview card-preview-' + (style || 'sketch');
+    cardPrev.style.backgroundImage = style === 'photo' && look.cardBg ? 'url("' + look.cardBg + '")' : '';
+  }
+  const cardRm = document.getElementById('lookCardRemove');
+  if (cardRm) cardRm.hidden = !look.cardBg;
 }
 
 async function setCardPicture(file) {
@@ -3902,7 +4140,7 @@ function switchTab(tab) {
   if (tab === 'people') loadPeople();
   if (tab === 'stickers') renderStickerTray();
   if (tab === 'backlog') { renderDateStrip(); renderBacklog(); }
-  if (tab === 'settings') { renderAccount(); loadInvites(); loadTeam(); }
+  if (tab === 'settings') { renderAccount(); loadInvites(); loadTeam(); loadTwoStep(); }
   renderPlacedStickers();          // each tab keeps its own stickers
   if (sharedMode) renderGroup();
   // On a phone you're usually deep in a long list when you switch tabs; land at the
@@ -5181,7 +5419,6 @@ document.getElementById('lookBgInput').addEventListener('change', (e) => {
 document.querySelectorAll('#lookCard .card-choice').forEach(b => {
   b.addEventListener('click', () => {
     const card = b.dataset.card || null;
-    if (card === 'photo') { document.getElementById('lookCardInput').click(); return; }
     saveLook({ card });
   });
 });
