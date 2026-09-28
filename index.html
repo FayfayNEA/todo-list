@@ -1162,6 +1162,8 @@
   .bubble-text { white-space: pre-wrap; word-break: break-word; }
   .bubble .remove { position: absolute; right: 4px; top: 4px; }
   .session-leave { margin-top: 10px; }
+  .collab-end { display: flex; gap: 8px; margin-top: 12px; }
+  .session-head .person-x { margin-left: 2px; }
   .session-head {
     display: flex; align-items: center; gap: 10px;
     padding: 11px 12px; cursor: pointer; font-size: 12px;
@@ -1773,7 +1775,7 @@
     <div class="tab" data-tab="backlog" onclick="switchTab('backlog')">Backlog</div>
     <div class="tab" data-tab="growth" onclick="switchTab('growth')">growth</div>
     <div class="tab" data-tab="people" onclick="switchTab('people')">people</div>
-    <div class="tab" data-tab="collab" onclick="switchTab('collab')">schedule</div>
+    <div class="tab" data-tab="collab" onclick="switchTab('collab')">collab</div>
     <div class="tab-spacer"></div>
     <div class="tab tab-metrics" data-tab="metrics" onclick="switchTab('metrics')">metrics</div>
     <div class="tab" data-tab="stickers" onclick="switchTab('stickers')">stickers</div>
@@ -3398,7 +3400,12 @@ function renderSessions() {
     const count = document.createElement('span');
     count.className = 'session-count';
     count.textContent = x.notes.length ? x.notes.length + '' : '';
-    head.append(main, memberDots(x.memberNames), count);
+    const del = document.createElement('button');
+    del.className = 'person-x';
+    del.textContent = '\u00d7';
+    del.title = 'done, delete it';
+    del.onclick = (e) => { e.stopPropagation(); deleteCollab(x); };
+    head.append(main, memberDots(x.memberNames), count, del);
     head.onclick = () => { openSessionId = x.id; renderSessions(); window.scrollTo({ top: 0, behavior: 'smooth' }); };
     card.appendChild(head);
     list.appendChild(card);
@@ -3411,7 +3418,7 @@ function buildCollabPage(sess) {
 
   const back = document.createElement('button');
   back.className = 'collab-back';
-  back.textContent = '\u2190 schedule';
+  back.textContent = '\u2190 all collabs';
   back.onclick = () => { openSessionId = null; renderSessions(); };
   page.appendChild(back);
 
@@ -3524,11 +3531,18 @@ function buildCollabPage(sess) {
   composer.querySelector('.composer-input').addEventListener('input', (e) => { sessionDrafts[sess.id] = e.target.value; saveDrafts(); });
   page.appendChild(composer);
 
+  const endRow = document.createElement('div');
+  endRow.className = 'collab-end';
+  const done = document.createElement('button');
+  done.className = 'person-btn';
+  done.textContent = 'done, delete it';
+  done.onclick = () => deleteCollab(sess);
   const leave = document.createElement('button');
-  leave.className = 'person-btn quiet session-leave';
+  leave.className = 'person-btn quiet';
   leave.textContent = 'leave collab';
   leave.onclick = async () => { openSessionId = null; await sessionAct({ action: 'session_leave', id: sess.id }); };
-  page.appendChild(leave);
+  endRow.append(done, leave);
+  page.appendChild(endRow);
   return page;
 }
 
@@ -3565,6 +3579,23 @@ function placeCollabOnDay(sess) {
   saveDays();
   renderDateStrip();
   renderDay();
+}
+
+// Gone for everyone in it, straight away, with an undo right there.
+async function deleteCollab(sess) {
+  if (openSessionId === sess.id) openSessionId = null;
+  await sessionAct({ action: 'session_delete', id: sess.id });
+  const el = document.getElementById('collabMsg');
+  el.className = 'setting-note good';
+  el.hidden = false;
+  el.textContent = 'deleted \u201c' + (sess.task ? sess.task.text : sess.title) + '\u201d \u00b7 ';
+  const undo = document.createElement('a');
+  undo.className = 'invite-act';
+  undo.textContent = 'undo';
+  undo.onclick = async () => { el.hidden = true; await sessionAct({ action: 'session_restore', id: sess.id }); };
+  el.appendChild(undo);
+  clearTimeout(deleteCollab.t);
+  deleteCollab.t = setTimeout(() => { if (el.contains(undo)) el.hidden = true; }, 8000);
 }
 
 async function acceptCollabTime(sess) {
@@ -3647,7 +3678,7 @@ function renderGroup() {
   // Collab is the group's, so it belongs in the group's row too.
   const collabTab = document.createElement('div');
   collabTab.className = 'tab group-collab' + (activeTab === 'collab' && !viewingShared() ? ' active' : '');
-  collabTab.textContent = 'schedule';
+  collabTab.textContent = 'collab';
   collabTab.onclick = async () => { if (viewingShared()) await openMyBoard(); switchTab('collab'); };
   row.appendChild(collabTab);
   // Settings are yours wherever you are, so the gear stays; it takes you home first.

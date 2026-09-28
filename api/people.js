@@ -16,6 +16,7 @@ import {
 // POST /api/people { action: session_new, uids, task: { id?, text, date?, owner? } }   a collab, always about a task
 // POST /api/people { action: session_time, id, date, time, place }  propose when and where
 // POST /api/people { action: session_accept, id }            agree to the proposal
+// POST /api/people { action: session_delete | session_restore, id }   done with it, for everyone (with an undo)
 // POST /api/people { action: session_note, id, text }        write in one
 // POST /api/people { action: session_unnote, id, noteId }    take your note back
 // POST /api/people { action: session_leave, id }
@@ -130,7 +131,8 @@ export default async function handler(req, res) {
         return { uid, name: nameOf(profiles, uid, fallback), showDay: !!p.showDay, showStickers: !!p.showStickers };
       };
       const asks = await getAsks();
-      const sessions = (await getSessions()).filter((x) => x.members.includes(me));
+      // Deleted ones are kept a while for undo, but never shown.
+      const sessions = (await getSessions()).filter((x) => x.members.includes(me) && !x.deletedAt);
       res.status(200).json({
         me: { name: mine.name || '', showDay: !!mine.showDay, showStickers: !!mine.showStickers, approveFirst: !!mine.approveFirst, theme: mine.theme || {} },
         asks: asks.filter((a) => a.to === me).map((a) => ({ ...a, fromName: nameOf(profiles, a.from, a.fromEmail) })),
@@ -290,6 +292,12 @@ export default async function handler(req, res) {
           const acc = new Set(session.when.accepted || []);
           acc.add(me);
           session.when.accepted = [...acc];
+        } else if (action === 'session_delete') {
+          session.deletedAt = new Date().toISOString();
+          session.deletedBy = me;
+        } else if (action === 'session_restore') {
+          delete session.deletedAt;
+          delete session.deletedBy;
         } else if (action === 'session_leave') {
           session.members = session.members.filter((u) => u !== me);
           if (!session.members.length) sessions = sessions.filter((x) => x !== session);
@@ -297,6 +305,9 @@ export default async function handler(req, res) {
           res.status(400).json({ error: 'unknown action' });
           return;
         }
+        // Anything deleted more than a week ago is gone for good.
+        const weekAgo = Date.now() - 7 * 86400000;
+        sessions = sessions.filter((x) => !x.deletedAt || Date.parse(x.deletedAt) > weekAgo);
         await putSessions(sessions);
         res.status(200).json({ ok: true });
         return;
