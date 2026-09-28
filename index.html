@@ -1130,7 +1130,11 @@
   .collab-who { display: flex; align-items: center; gap: 8px; margin: 12px 0; font-size: 12px; color: var(--muted); }
   .collab-when { background: var(--card); border: 1px solid var(--border-light); border-radius: 10px; padding: 12px; margin-bottom: 8px; }
   .collab-when-head { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
-  .collab-when-by { font-weight: 400; font-size: 11px; color: var(--muted); margin-left: 8px; }
+  .collab-when-by { font-weight: 400; font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .collab-when.agreed { border-color: var(--btn-blue); background: var(--highlight); }
+  .collab-accept { margin-bottom: 10px; }
+  .collab-place { min-width: 140px; flex: 1; }
+  .session-sub.needs-you { color: #93352a; }
   .collab-when-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
 
@@ -1769,7 +1773,7 @@
     <div class="tab" data-tab="backlog" onclick="switchTab('backlog')">Backlog</div>
     <div class="tab" data-tab="growth" onclick="switchTab('growth')">growth</div>
     <div class="tab" data-tab="people" onclick="switchTab('people')">people</div>
-    <div class="tab" data-tab="collab" onclick="switchTab('collab')">collab</div>
+    <div class="tab" data-tab="collab" onclick="switchTab('collab')">schedule</div>
     <div class="tab-spacer"></div>
     <div class="tab tab-metrics" data-tab="metrics" onclick="switchTab('metrics')">metrics</div>
     <div class="tab" data-tab="stickers" onclick="switchTab('stickers')">stickers</div>
@@ -2027,7 +2031,7 @@
     <div class="setting-note" id="collabMsg" hidden></div>
     <div id="sessionList"></div>
     <div class="empty" id="sessionEmpty" hidden>
-      collabs start from a task. open one of yours and tap <b>collab on this</b>, or ask to collab on someone else's.
+      nothing planned with anyone yet. open one of your tasks and tap <b>collab on this</b>, or ask to collab on someone else's.
     </div>
   </div>
 
@@ -3338,14 +3342,14 @@ function openCollab(id) {
 }
 
 function whenLabel(w) {
-  if (!w || (!w.date && !w.time)) return '';
+  if (!w || (!w.date && !w.time && !w.place)) return '';
   const d = w.date ? new Date(w.date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).toLowerCase() : '';
   let t = '';
   if (w.time) {
     const [h, m] = w.time.split(':').map(Number);
     t = ((h % 12) || 12) + (m ? ':' + String(m).padStart(2, '0') : '') + (h < 12 ? 'am' : 'pm');
   }
-  return [d, t].filter(Boolean).join(' · ');
+  return [d, t, w.place].filter(Boolean).join(' · ');
 }
 
 function memberDots(names) {
@@ -3385,8 +3389,11 @@ function renderSessions() {
     const sub = document.createElement('div');
     sub.className = 'session-sub';
     const when = whenLabel(x.when);
-    sub.textContent = when ? when : 'no time yet';
+    sub.textContent = !when ? 'no time yet'
+      : x.agreed ? when + ' \u00b7 agreed'
+      : when + (x.iAccepted ? ' \u00b7 waiting on ' + x.waitingOn.join(', ') : ' \u00b7 needs your ok');
     if (!when) sub.classList.add('unset');
+    else if (!x.agreed && !x.iAccepted) sub.classList.add('needs-you');
     main.append(title, sub);
     const count = document.createElement('span');
     count.className = 'session-count';
@@ -3404,7 +3411,7 @@ function buildCollabPage(sess) {
 
   const back = document.createElement('button');
   back.className = 'collab-back';
-  back.textContent = '\u2190 all collabs';
+  back.textContent = '\u2190 schedule';
   back.onclick = () => { openSessionId = null; renderSessions(); };
   page.appendChild(back);
 
@@ -3427,18 +3434,27 @@ function buildCollabPage(sess) {
   who.appendChild(names);
   page.appendChild(who);
 
-  // When: anyone in it can set or change the time.
+  // When and where: anyone proposes, everyone accepts, and accepting puts it on your day.
   const whenBox = document.createElement('div');
-  whenBox.className = 'collab-when';
+  whenBox.className = 'collab-when' + (sess.agreed ? ' agreed' : '');
   const whenHead = document.createElement('div');
   whenHead.className = 'collab-when-head';
   const label = whenLabel(sess.when);
-  whenHead.textContent = label ? 'working on it ' + label : 'when will you work on it?';
-  if (label && sess.whenByName) {
-    const by = document.createElement('span');
-    by.className = 'collab-when-by';
-    by.textContent = 'set by ' + sess.whenByName;
-    whenHead.appendChild(by);
+  whenHead.textContent = !label ? 'when and where?' : label;
+  if (label) {
+    const st = document.createElement('div');
+    st.className = 'collab-when-by';
+    st.textContent = sess.agreed ? 'agreed by everyone \u00b7 on your day'
+      : 'proposed by ' + sess.whenByName + ' \u00b7 waiting on ' + sess.waitingOn.join(', ');
+    whenHead.appendChild(st);
+  }
+  whenBox.appendChild(whenHead);
+  if (label && !sess.iAccepted) {
+    const ok = document.createElement('button');
+    ok.className = 'person-btn collab-accept';
+    ok.textContent = 'accept \u2014 add it to my day';
+    ok.onclick = () => acceptCollabTime(sess);
+    whenBox.appendChild(ok);
   }
   const row = document.createElement('div');
   row.className = 'collab-when-row';
@@ -3450,20 +3466,22 @@ function buildCollabPage(sess) {
   t.type = 'time';
   t.className = 'strip-jump';
   t.value = (sess.when && sess.when.time) || '';
+  const pl = document.createElement('input');
+  pl.className = 'strip-jump collab-place';
+  pl.placeholder = 'where? (optional)';
+  pl.maxLength = 80;
+  pl.value = (sess.when && sess.when.place) || '';
   const set = document.createElement('button');
-  set.className = 'person-btn';
-  set.textContent = label ? 'change' : 'set time';
-  set.onclick = () => sessionAct({ action: 'session_time', id: sess.id, date: d.value, time: t.value });
-  row.append(d, t, set);
-  if (label) {
-    const clear = document.createElement('button');
-    clear.className = 'person-x';
-    clear.textContent = '\u00d7';
-    clear.title = 'clear the time';
-    clear.onclick = () => sessionAct({ action: 'session_time', id: sess.id, date: '', time: '' });
-    row.appendChild(clear);
-  }
-  whenBox.append(whenHead, row);
+  set.className = label ? 'person-btn quiet' : 'person-btn';
+  set.textContent = label ? 'propose another' : 'propose';
+  set.onclick = async () => {
+    await sessionAct({ action: 'session_time', id: sess.id, date: d.value, time: t.value, place: pl.value });
+    // Proposing is agreeing, so it goes on your day too.
+    const fresh = people.sessions.find(x => x.id === sess.id);
+    if (fresh) placeCollabOnDay(fresh);
+  };
+  row.append(d, t, pl, set);
+  whenBox.appendChild(row);
   page.appendChild(whenBox);
 
   // The notes, as a thread.
@@ -3527,6 +3545,33 @@ function setCollabMsg(t, tone) {
   if (!el) return;
   el.textContent = t || ''; el.hidden = !t;
   el.className = 'setting-note' + (tone ? ' ' + tone : '');
+}
+
+// Accepting a proposed time puts the collab on your day as its own entry. It carries the
+// collab's id, so a later change moves the entry rather than adding a second one.
+function placeCollabOnDay(sess) {
+  if (!sess.when || !sess.when.date) return;
+  for (const date of Object.keys(daysMap)) {
+    daysMap[date] = (daysMap[date] || []).filter(i => i.collabId !== sess.id || i.done);
+  }
+  const bits = [sess.task ? sess.task.text : sess.title];
+  if (sess.when.time) bits.push(whenLabel({ time: sess.when.time }));
+  if (sess.when.place) bits.push(sess.when.place);
+  const others = sess.memberNames.filter(n => n !== 'you');
+  const item = mk(bits.join(' \u00b7 ') + (others.length ? ' (with ' + others.join(', ') + ')' : ''), 'work');
+  item.collabId = sess.id;
+  ensureDay(sess.when.date);
+  daysMap[sess.when.date].push(item);
+  saveDays();
+  renderDateStrip();
+  renderDay();
+}
+
+async function acceptCollabTime(sess) {
+  await sessionAct({ action: 'session_accept', id: sess.id });
+  const fresh = people.sessions.find(x => x.id === sess.id) || sess;
+  placeCollabOnDay(fresh);
+  setCollabMsg('on your day for ' + whenLabel(fresh.when) + '.', 'good');
 }
 
 // Start a collab on one of your own tasks, with people from your group.
@@ -3602,7 +3647,7 @@ function renderGroup() {
   // Collab is the group's, so it belongs in the group's row too.
   const collabTab = document.createElement('div');
   collabTab.className = 'tab group-collab' + (activeTab === 'collab' && !viewingShared() ? ' active' : '');
-  collabTab.textContent = 'collab';
+  collabTab.textContent = 'schedule';
   collabTab.onclick = async () => { if (viewingShared()) await openMyBoard(); switchTab('collab'); };
   row.appendChild(collabTab);
   // Settings are yours wherever you are, so the gear stays; it takes you home first.

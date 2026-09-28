@@ -14,7 +14,8 @@ import {
 // POST /api/people { action: ask, uid, date, text, kind? }   ask to add to their day, or (kind: collab) to work on something together
 // POST /api/people { action: ask_done, id }                  you added it, or said no
 // POST /api/people { action: session_new, uids, task: { id?, text, date?, owner? } }   a collab, always about a task
-// POST /api/people { action: session_time, id, date, time }  when to work on it (either can be empty)
+// POST /api/people { action: session_time, id, date, time, place }  propose when and where
+// POST /api/people { action: session_accept, id }            agree to the proposal
 // POST /api/people { action: session_note, id, text }        write in one
 // POST /api/people { action: session_unnote, id, noteId }    take your note back
 // POST /api/people { action: session_leave, id }
@@ -138,6 +139,10 @@ export default async function handler(req, res) {
           memberNames: x.members.map((u) => (u === me ? 'you' : nameOf(profiles, u))),
           ownerName: x.task ? (x.task.owner === me ? 'you' : nameOf(profiles, x.task.owner)) : null,
           whenByName: x.when ? (x.when.by === me ? 'you' : nameOf(profiles, x.when.by)) : null,
+          // Who has said yes to the proposed time, who hasn't yet, and whether that's everyone.
+          iAccepted: !!(x.when && (x.when.accepted || []).includes(me)),
+          waitingOn: x.when ? x.members.filter((u) => !(x.when.accepted || []).includes(u)).map((u) => (u === me ? 'you' : nameOf(profiles, u))) : [],
+          agreed: !!(x.when && x.members.every((u) => (x.when.accepted || []).includes(u))),
           notes: x.notes.map((n) => ({ ...n, byName: n.by === me ? 'you' : nameOf(profiles, n.by), mine: n.by === me })),
         })),
         requests: follows.filter((f) => f.to === me && f.status === 'pending').map((f) => person(f.from, f.fromEmail)),
@@ -272,12 +277,19 @@ export default async function handler(req, res) {
         } else if (action === 'session_time') {
           const date = String(body.date || '');
           const time = String(body.time || '');
-          if (!date && !time) delete session.when;
+          const place = cleanText(body.place).slice(0, 80);
+          if (!date && !time && !place) delete session.when;
           else {
             if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) { res.status(400).json({ error: 'which day?' }); return; }
             if (time && !/^\d{2}:\d{2}$/.test(time)) { res.status(400).json({ error: 'what time?' }); return; }
-            session.when = { date: date || null, time: time || null, by: me, at: new Date().toISOString() };
+            // A new proposal starts the agreeing over; whoever proposed it has agreed.
+            session.when = { date: date || null, time: time || null, place: place || null, by: me, at: new Date().toISOString(), accepted: [me] };
           }
+        } else if (action === 'session_accept') {
+          if (!session.when) { res.status(400).json({ error: 'nothing proposed yet' }); return; }
+          const acc = new Set(session.when.accepted || []);
+          acc.add(me);
+          session.when.accepted = [...acc];
         } else if (action === 'session_leave') {
           session.members = session.members.filter((u) => u !== me);
           if (!session.members.length) sessions = sessions.filter((x) => x !== session);
