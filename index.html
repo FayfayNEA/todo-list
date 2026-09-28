@@ -1985,8 +1985,30 @@
     <div class="empty" id="sessionEmpty" hidden>no sessions yet. start one above, or ask to collab from someone's task.</div>
   </div>
 
-  <!-- PEOPLE VIEW: your profile, who you follow, and who follows you -->
+  <!-- PEOPLE VIEW: find people, who you follow, and your profile -->
   <div id="peopleView" class="tab-panel" style="display:none;">
+    <div class="setting-group">
+      <div class="setting-title">find people</div>
+      <div class="setting-row">
+        <input class="quote-who-input" id="peopleSearch" placeholder="search by name"
+               autocomplete="off" spellcheck="false">
+      </div>
+      <div id="peopleResults"></div>
+    </div>
+
+    <div class="setting-group" id="peopleInbox" hidden>
+      <div class="setting-title">waiting on you</div>
+      <div id="followRequests"></div>
+      <div id="askList"></div>
+    </div>
+
+    <div class="setting-group">
+      <div class="setting-title">following</div>
+      <div id="followingList"></div>
+      <div class="setting-subtitle" id="followersTitle" hidden>following you</div>
+      <div id="followersList"></div>
+    </div>
+
     <div class="setting-group">
       <div class="setting-title">your profile</div>
       <div class="setting-note">
@@ -2007,28 +2029,6 @@
         show my sticker board and polaroids
       </label>
       <div class="setting-note" id="peopleMsg" hidden></div>
-    </div>
-
-    <div class="setting-group" id="peopleInbox" hidden>
-      <div class="setting-title">waiting on you</div>
-      <div id="followRequests"></div>
-      <div id="askList"></div>
-    </div>
-
-    <div class="setting-group">
-      <div class="setting-title">find people</div>
-      <div class="setting-row">
-        <input class="quote-who-input" id="peopleSearch" placeholder="search by name"
-               autocomplete="off" spellcheck="false">
-      </div>
-      <div id="peopleResults"></div>
-    </div>
-
-    <div class="setting-group">
-      <div class="setting-title">following</div>
-      <div id="followingList"></div>
-      <div class="setting-subtitle" id="followersTitle" hidden>following you</div>
-      <div id="followersList"></div>
     </div>
   </div>
 
