@@ -1060,6 +1060,19 @@
   .person-btn:hover { background: var(--btn-blue-hover); transform: scale(1.05); }
   .person-btn.quiet { background: transparent; color: var(--muted); border-color: var(--border-light); }
   .person-btn.quiet:hover { color: var(--text); border-color: var(--border); background: transparent; }
+  .people-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .people-col { min-width: 0; }
+  .people-col .setting-title { margin-bottom: 8px; }
+  .people-col .quote-who-input { width: 100%; }
+  .people-none { font-size: 11px; color: var(--muted); padding: 8px 2px; }
+  .people-cols .person-card { padding: 6px 6px 6px 8px; gap: 8px; }
+  .people-cols .person-dot { width: 24px; height: 24px; font-size: 11px; }
+  .person-x {
+    flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%; cursor: pointer;
+    background: transparent; border: 1px solid var(--border-light); color: var(--muted); font-size: 14px; line-height: 1;
+  }
+  .person-x:hover { color: var(--danger); border-color: var(--danger); }
+  @media (max-width: 640px) { .people-cols { grid-template-columns: 1fr; } }
   .person-status { font-size: 10px; color: var(--muted); padding: 3px 9px; border-radius: 20px; background: var(--highlight); letter-spacing: 0.04em; }
   .ask-text { color: var(--text); }
   .collab-new {
@@ -1702,10 +1715,10 @@
     <div class="tab active" data-tab="day" onclick="switchTab('day')">Day</div>
     <div class="tab" data-tab="backlog" onclick="switchTab('backlog')">Backlog</div>
     <div class="tab" data-tab="growth" onclick="switchTab('growth')">growth</div>
-    <div class="tab" data-tab="stickers" onclick="switchTab('stickers')">stickers</div>
     <div class="tab" data-tab="people" onclick="switchTab('people')">people</div>
     <div class="tab" data-tab="collab" onclick="switchTab('collab')">collab</div>
     <div class="tab tab-metrics" data-tab="metrics" onclick="switchTab('metrics')">metrics</div>
+    <div class="tab" data-tab="stickers" onclick="switchTab('stickers')">stickers</div>
     <div class="tab tab-settings" data-tab="settings" onclick="switchTab('settings')"
          title="settings" role="button" aria-label="settings">
       <svg class="tab-icon" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
@@ -1868,7 +1881,6 @@
   <div id="settingsView" class="tab-panel" style="display:none;">
     <div class="setting-group">
       <div class="setting-title">your look</div>
-      <div class="setting-note">what your board is called, its colour, and what's behind it. people you share your board with see it this way too.</div>
       <div class="setting-row">
         <input class="quote-who-input" id="lookTitle" placeholder="the manifesto" maxlength="40" autocomplete="off" spellcheck="false">
       </div>
@@ -1910,10 +1922,7 @@
       <!-- Only on the old passphrase: give this list an email and password, so it can be
            opened on any device. The list itself isn't touched. -->
       <div id="claimBox" hidden>
-        <div class="setting-note">
-          you're signed in with the old passphrase. make this an email account and your
-          whole list comes with it, so you can sign in on any phone.
-        </div>
+        <div class="setting-note">make it an email account to sign in on any phone. your list comes with it.</div>
         <div class="setting-row" style="justify-content:flex-start">
           <input class="quote-who-input" id="claimEmail" type="email" placeholder="your email"
                  autocomplete="email" autocapitalize="none" autocorrect="off" spellcheck="false">
@@ -1927,20 +1936,13 @@
 
     <div class="setting-group" id="twoStepGroup" hidden>
       <div class="setting-title">two-step sign in</div>
-      <div class="setting-note" id="twoStepNote">
-        after your password, a 6-digit code from an authenticator app on your phone
-        (apple passwords, google authenticator, 1password). someone with your password still can't get in.
-      </div>
+      <div class="setting-note" id="twoStepNote">a code from your phone after your password.</div>
       <div id="twoStepBody"></div>
       <div class="setting-note" id="twoStepMsg" hidden></div>
     </div>
 
     <div class="setting-group" id="inviteGroup" hidden>
       <div class="setting-title">invite someone</div>
-      <div class="setting-note">
-        they get a code of their own that works once, and a checklist of their own that
-        starts empty. nothing of yours is shared with them.
-      </div>
       <div class="setting-row">
         <input class="quote-who-input" id="inviteEmail" type="email" placeholder="their email"
                autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
@@ -1952,11 +1954,7 @@
 
     <div class="setting-group">
       <div class="setting-title">agent token</div>
-      <div class="setting-note">
-        a script or an agent can post tasks straight into your day with this, and it's the
-        <code>Authorization</code> header in AGENT_API.md. it only ever reaches this account's
-        list, and anyone who has it can write to that list, so keep it to yourself.
-      </div>
+      <div class="setting-note">lets a script add tasks to your day. keep it private.</div>
       <div class="setting-row">
         <button class="tray-reset" id="apiTokenReveal" onclick="toggleApiToken()">show token</button>
       </div>
@@ -1965,7 +1963,7 @@
         <button id="apiTokenCopy" onclick="copyApiToken()">copy</button>
       </div>
       <div class="setting-note" id="apiTokenNone" hidden>
-        not available while signed in with the old shared passphrase, so make an account to get one.
+        make an email account to get one.
       </div>
     </div>
   </div>
@@ -1987,33 +1985,32 @@
 
   <!-- PEOPLE VIEW: find people, who you follow, and your profile -->
   <div id="peopleView" class="tab-panel" style="display:none;">
-    <div class="setting-group">
-      <div class="setting-title">find people</div>
-      <div class="setting-row">
-        <input class="quote-who-input" id="peopleSearch" placeholder="search by name"
-               autocomplete="off" spellcheck="false">
-      </div>
-      <div id="peopleResults"></div>
-    </div>
-
     <div class="setting-group" id="peopleInbox" hidden>
       <div class="setting-title">waiting on you</div>
       <div id="followRequests"></div>
       <div id="askList"></div>
     </div>
 
-    <div class="setting-group">
-      <div class="setting-title">following</div>
-      <div id="followingList"></div>
-      <div class="setting-subtitle" id="followersTitle" hidden>following you</div>
-      <div id="followersList"></div>
+    <!-- Three columns side by side: find, who you follow, who follows you. -->
+    <div class="setting-group people-cols">
+      <div class="people-col">
+        <div class="setting-title">find people</div>
+        <input class="quote-who-input" id="peopleSearch" placeholder="search by name"
+               autocomplete="off" spellcheck="false">
+        <div id="peopleResults"></div>
+      </div>
+      <div class="people-col">
+        <div class="setting-title">following</div>
+        <div id="followingList"></div>
+      </div>
+      <div class="people-col">
+        <div class="setting-title" id="followersTitle">following you</div>
+        <div id="followersList"></div>
+      </div>
     </div>
 
     <div class="setting-group">
       <div class="setting-title">your profile</div>
-      <div class="setting-note">
-        your name is how people find you. they see only what you switch on, once you say yes. never your personal list.
-      </div>
       <div class="setting-row">
         <input class="quote-who-input" id="profileName" placeholder="your name, so people can find you"
                autocomplete="off" spellcheck="false" maxlength="40">
@@ -2930,8 +2927,10 @@ function personRow(name, actions, extra) {
   acts.className = 'person-acts';
   actions.forEach(([label, fn]) => {
     const b = document.createElement(fn ? 'button' : 'span');
-    b.textContent = label;
-    b.className = !fn ? 'person-status' : QUIET_ACTIONS.has(label) ? 'person-btn quiet' : 'person-btn';
+    const quiet = fn && QUIET_ACTIONS.has(label);
+    b.textContent = quiet ? '\u00d7' : label;
+    if (quiet) b.title = label;
+    b.className = !fn ? 'person-status' : quiet ? 'person-x' : 'person-btn';
     if (fn) b.onclick = fn;
     acts.appendChild(b);
   });
@@ -3011,22 +3010,27 @@ function renderPeopleLists() {
   following.innerHTML = '';
   if (!people.following.length) {
     const none = document.createElement('div');
-    none.className = 'setting-note';
-    none.textContent = 'no one yet. find someone above.';
+    none.className = 'people-none';
+    none.textContent = 'no one yet';
     following.appendChild(none);
   }
   people.following.forEach(p => {
     const acts = [];
     if (p.status === 'pending') acts.push(['asked', null]);
-    else if (p.showDay || p.showStickers) acts.push(['open board', () => openSharedBoard(p.uid, p.name)]);
-    else acts.push(['nothing shared yet', null]);
+    else if (p.showDay || p.showStickers) acts.push(['open', () => openSharedBoard(p.uid, p.name)]);
+    else acts.push(['private', null]);
     acts.push(['unfollow', () => peopleAct('unfollow', p.uid)]);
     following.appendChild(personRow(p.name, acts));
   });
 
   const followers = document.getElementById('followersList');
   followers.innerHTML = '';
-  document.getElementById('followersTitle').hidden = !people.followers.length;
+  if (!people.followers.length) {
+    const none = document.createElement('div');
+    none.className = 'people-none';
+    none.textContent = 'no one yet';
+    followers.appendChild(none);
+  }
   people.followers.forEach(p => followers.appendChild(personRow(p.name, [['remove', () => peopleAct('remove', p.uid)]])));
 
   renderSessions();
@@ -3764,7 +3768,7 @@ function renderInvites() {
   if (!mailWorks) {
     const note = document.createElement('div');
     note.className = 'setting-note';
-    note.textContent = 'email sending isn\u2019t set up, so invitations are made but not delivered, so copy the link and send it yourself.';
+    note.textContent = 'copy the link and send it yourself.';
     list.appendChild(note);
   }
   invites.forEach(inv => {
