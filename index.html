@@ -950,6 +950,31 @@
   .tab-mood { font-size: 9px; letter-spacing: 0.04em; margin-left: 6px; padding: 1px 6px; border-radius: 10px; background: var(--highlight); color: var(--muted); }
   .tab-mood.mood-2, .checkin-them.mood-2 { background: #f3e2c8; color: #8a5a1c; }
   .tab-mood.mood-3, .checkin-them.mood-3 { background: #f2d0c8; color: #93352a; }
+  .profile-mood { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0 2px; }
+  .profile-mood-q { font-size: 11px; color: var(--muted); letter-spacing: 0.04em; }
+  .mood-pop {
+    position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 16px;
+    background: hsl(var(--hue) calc(20% * var(--sat)) 20% / 0.28);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+    animation: panelIn 0.25s ease;
+  }
+  .mood-pop[hidden] { display: none; }
+  .mood-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+    padding: 24px 22px 16px; width: min(380px, 100%); text-align: center;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.25); animation: authIn 0.35s cubic-bezier(.22,.9,.32,1.2);
+  }
+  .mood-q { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+  .mood-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .mood-opt {
+    font: inherit; font-size: 14px; padding: 14px 10px; border-radius: 12px; cursor: pointer;
+    background: var(--bg); border: 1px solid var(--border-light); color: var(--text);
+    transition: transform 0.15s cubic-bezier(.2,.8,.3,1.4), border-color 0.15s ease, background 0.15s ease;
+  }
+  .mood-opt:hover { transform: scale(1.04); border-color: var(--btn-blue); background: var(--highlight); }
+  .mood-opt.mood-2:hover { background: #f3e2c8; border-color: #d9b27a; }
+  .mood-opt.mood-3:hover { background: #f2d0c8; border-color: #d98a7a; }
+  .mood-skip { margin-top: 12px; background: none; border: none; font: inherit; font-size: 11px; color: var(--muted); cursor: pointer; text-decoration: underline; }
   .checkin-them { font-size: 11px; padding: 3px 10px; border-radius: 20px; background: var(--highlight); color: var(--text); letter-spacing: 0.04em; }
   .guest-fold { cursor: pointer; user-select: none; }
   .guest-fold:hover { color: var(--text); }
@@ -1657,6 +1682,14 @@
     </div>
   </div>
 </div>
+<!-- Once a day, the first time the page opens: how today feels, before anything else. -->
+<div class="mood-pop" id="moodPop" hidden>
+  <div class="mood-card">
+    <div class="mood-q">how's today feeling?</div>
+    <div class="mood-opts" id="moodOpts"></div>
+    <button class="mood-skip" onclick="closeMoodPop()">not now</button>
+  </div>
+</div>
 <div class="sub-pop" id="subPop" hidden onclick="if (event.target === this) closeSubPop()">
   <div class="sub-pop-backdrop"></div>
   <div class="sub-pop-card" id="subPopCard">
@@ -2029,6 +2062,10 @@
       <div class="setting-row">
         <input class="quote-who-input" id="profileName" placeholder="your name, so people can find you"
                autocomplete="off" spellcheck="false" maxlength="40">
+      </div>
+      <div class="profile-mood">
+        <span class="profile-mood-q">today i'm feeling</span>
+        <div class="checkin-opts" id="profileMood"></div>
       </div>
       <label class="shared-switch in-settings">
         <input type="checkbox" id="profileShowDay" onchange="saveProfile({ showDay: this.checked })">
@@ -2969,6 +3006,7 @@ function renderPeople() {
   document.getElementById('profileShowDay').checked = !!people.me.showDay;
   document.getElementById('profileShowStickers').checked = !!people.me.showStickers;
   document.getElementById('profileApproveFirst').checked = !!people.me.approveFirst;
+  renderProfileMood();
 
   const reqs = document.getElementById('followRequests');
   const asks = document.getElementById('askList');
@@ -5939,6 +5977,51 @@ function undoLighten() {
   renderDay();
 }
 
+// Asked once per day per device, and not at all if today already has an answer (from
+// this device or another), or while someone else's board is open.
+function maybeAskMood() {
+  if (!getToken() || viewingShared()) return;
+  const today = todayStr();
+  let asked = null;
+  try { asked = localStorage.getItem(nsKey('moodAsked')); } catch (e) {}
+  if (asked === today || stressOf(today) != null) return;
+  try { localStorage.setItem(nsKey('moodAsked'), today); } catch (e) {}
+  const opts = document.getElementById('moodOpts');
+  opts.innerHTML = '';
+  STRESS_LEVELS.forEach((lvl, i) => {
+    const b = document.createElement('button');
+    b.className = 'mood-opt mood-' + i;
+    b.textContent = lvl.word;
+    b.onclick = () => {
+      closeMoodPop();
+      if (currentDate !== today) selectDay(today);
+      setStress(i);
+    };
+    opts.appendChild(b);
+  });
+  document.getElementById('moodPop').hidden = false;
+}
+function closeMoodPop() { document.getElementById('moodPop').hidden = true; }
+
+function renderProfileMood() {
+  const box = document.getElementById('profileMood');
+  if (!box || viewingShared()) return;
+  box.innerHTML = '';
+  const today = todayStr();
+  const level = stressOf(today);
+  STRESS_LEVELS.forEach((lvl, i) => {
+    const b = document.createElement('button');
+    b.textContent = lvl.word;
+    if (level === i) b.classList.add('on');
+    b.onclick = () => {
+      if (currentDate !== today) selectDay(today);
+      if (stressOf(today) !== i) setStress(i);
+      renderProfileMood();
+    };
+    box.appendChild(b);
+  });
+}
+
 function renderCheckin() {
   const box = document.getElementById('checkinOpts');
   const wrap = document.getElementById('checkin');
@@ -5959,9 +6042,9 @@ function renderCheckin() {
     }
     return;
   }
-  if (q) q.textContent = "how's today feeling?";
-  // Only today and the days ahead: how last tuesday felt changes nothing now.
-  wrap.hidden = currentDate < todayStr();
+  // Your own answer comes from the morning pop-up and is changed on your profile, so the
+  // day itself stays clear of it.
+  wrap.hidden = true;
   STRESS_LEVELS.forEach((s, i) => {
     const b = document.createElement('button');
     b.textContent = s.word;
@@ -7375,7 +7458,9 @@ renderAccount();
 restoreDrafts();
 applyMyLook();
 renderGroup();
-loadAll().then(loadPeople);
+loadAll().then(loadPeople).then(maybeAskMood);
+// A tab left open overnight asks too, the first time it's looked at the next day.
+document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(maybeAskMood, 800); });
 // Record which build this tab is running, so a later check can tell it has fallen behind.
 checkPageVersion();
 </script>
