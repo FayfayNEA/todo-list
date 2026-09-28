@@ -81,7 +81,7 @@ const PEOPLE = [
       { name: 'sun-face', dx: 560, top: 560, size: 80, rot: '6deg' },
     ],
     state: {
-      days: { [today]: [task('moodboard for the launch', 'work', true), task('type pairing for the deck'), task('3 hero options'), task('dentist', 'personal')] },
+      days: { [today]: [task('moodboard for the launch', 'work', true), { ...task('type pairing for the deck'), id: 'mika-type' }, task('3 hero options'), task('dentist', 'personal')] },
       backlog: [task('icon audit'), task('illustration style guide'), task('secret side quest', 'personal')],
       checkins: { [today]: { stress: 2 } },
     },
@@ -161,7 +161,11 @@ await call('people', 'POST', { token: tokens.mika, body: { action: 'ask', uid: '
 // Something already said about your day, so there's a thread to look at from the start.
 await call('comments', 'POST', { token: tokens.jo, query: { uid: 'owner' }, body: { date: today, text: 'maybe venice first? they asked twice' } });
 await call('comments', 'POST', { token: tokens.mika, query: { uid: 'owner' }, body: { date: today, taskId: 'fay-reverify', text: 'the retry state looked great on my phone' } });
-const sess = await call('people', 'POST', { token: tokens.mika, body: { action: 'session_new', title: 'launch week', uids: ['owner', uids.jo] } });
+const sess = await call('people', 'POST', { token: tokens.mika, body: {
+  action: 'session_new', uids: ['owner', uids.jo],
+  task: { id: 'mika-type', text: 'type pairing for the deck', date: today },
+} });
+await call('people', 'POST', { token: tokens.mika, body: { action: 'session_time', id: sess.data.id, date: today, time: '15:00' } });
 await call('people', 'POST', { token: tokens.mika, body: { action: 'session_note', id: sess.data.id, text: 'hero options by wednesday?' } });
 await call('people', 'POST', { token: tokens.jo, body: { action: 'session_note', id: sess.data.id, text: 'copy freeze thursday, then QA' } });
 

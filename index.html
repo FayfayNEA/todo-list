@@ -387,7 +387,8 @@
   }
   /* Pushed to the far end of the row: it isn't one of the lists, it's the drawer. */
   /* Metrics and settings sit together at the right end: about you, not your day. */
-  .tab-metrics { margin-left: auto; }
+  /* Pushes everything after it to the right end, whichever tabs are hidden. */
+  .tab-spacer { flex: 1 1 auto; min-width: 8px; }
   .tab-settings {
     margin-right: 0;
     padding: 7px 14px 6px;
@@ -891,7 +892,7 @@
   }
   .metrics-detail .ln.was-moved .mk { color: var(--btn-blue); }
   .metrics-detail .ln.was-moved .tx { color: var(--muted); }
-  body.viewing-shared .lighten, body.viewing-shared .day-inbox { display: none !important; }
+  body.viewing-shared .lighten, body.viewing-shared .day-inbox, body.viewing-shared .strip-hint { display: none !important; }
   /* Your own note on someone else's task is yours to take back. */
   body.viewing-shared .task-notes .remove { display: inline-flex !important; }
   .day-inbox { margin: -4px 0 14px; }
@@ -950,8 +951,11 @@
   .tab-mood.mood-2, .checkin-them.mood-2 { background: #f3e2c8; color: #8a5a1c; }
   .tab-mood.mood-3, .checkin-them.mood-3 { background: #f2d0c8; color: #93352a; }
   .checkin-them { font-size: 11px; padding: 3px 10px; border-radius: 20px; background: var(--highlight); color: var(--text); letter-spacing: 0.04em; }
-  .guest-backlog .ln { display: flex; gap: 8px; font-size: 12px; padding: 6px 2px; border-bottom: 1px solid var(--border-light); }
-  .guest-backlog .ln .mk { color: var(--border); width: 12px; flex-shrink: 0; }
+  .guest-fold { cursor: pointer; user-select: none; }
+  .guest-fold:hover { color: var(--text); }
+  #dayView.work-folded #dayListWork, #dayView.work-folded #dayEmptyWork,
+  #dayView.work-folded #completedToggleWork, #dayView.work-folded #dayListWorkDone { display: none !important; }
+  .guest-backlog li.task-item { cursor: pointer; }
   .guest-backlog[hidden] { display: none; }
 
   /* The card: paper sketch (the original), plain, frosted glass, or a picture of your own. */
@@ -1081,14 +1085,30 @@
   }
   .collab-new[hidden] { display: none; }
   .collab-new-title { font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: 0.06em; margin-bottom: 8px; }
-  .collab-pick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-
-  #sessionPick label {
+  .collab-pick { display: flex; flex-wrap: wrap; gap: 6px; }
+  .collab-pick label {
     font-size: 11px; padding: 3px 9px; border: 1px solid var(--border-light); border-radius: 20px;
     cursor: pointer; color: var(--muted);
   }
-  #sessionPick input { display: none; }
-  #sessionPick label:has(input:checked) { color: var(--text); border-color: var(--btn-blue); background: var(--highlight); }
+  .collab-pick input { display: none; }
+  .collab-pick label:has(input:checked) { color: var(--text); border-color: var(--btn-blue); background: var(--highlight); }
+  .task-collab { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-light); }
+  .task-collab-lead { font-size: 11px; color: var(--muted); }
+  .session-main { flex: 1; min-width: 0; }
+  .session-sub { font-size: 11px; color: var(--accent); margin-top: 2px; }
+  .session-sub.unset { color: var(--muted); }
+  .collab-page { animation: panelIn 0.26s cubic-bezier(.22,.9,.32,1); }
+  .collab-back { background: none; border: none; padding: 0; font: inherit; font-size: 11px; color: var(--muted); cursor: pointer; margin-bottom: 12px; }
+  .collab-back:hover { color: var(--text); }
+  .collab-title { font-size: 17px; font-weight: 600; line-height: 1.35; }
+  .collab-whose { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .collab-who { display: flex; align-items: center; gap: 8px; margin: 12px 0; font-size: 12px; color: var(--muted); }
+  .collab-when { background: var(--card); border: 1px solid var(--border-light); border-radius: 10px; padding: 12px; margin-bottom: 8px; }
+  .collab-when-head { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+  .collab-when-by { font-weight: 400; font-size: 11px; color: var(--muted); margin-left: 8px; }
+  .collab-when-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+
   .session {
     border: 1px solid var(--border-light); border-radius: 10px; background: var(--card);
     margin-top: 8px; overflow: hidden; animation: taskIn 0.28s cubic-bezier(.22,.9,.32,1);
@@ -1717,6 +1737,7 @@
     <div class="tab" data-tab="growth" onclick="switchTab('growth')">growth</div>
     <div class="tab" data-tab="people" onclick="switchTab('people')">people</div>
     <div class="tab" data-tab="collab" onclick="switchTab('collab')">collab</div>
+    <div class="tab-spacer"></div>
     <div class="tab tab-metrics" data-tab="metrics" onclick="switchTab('metrics')">metrics</div>
     <div class="tab" data-tab="stickers" onclick="switchTab('stickers')">stickers</div>
     <div class="tab tab-settings" data-tab="settings" onclick="switchTab('settings')"
@@ -1788,8 +1809,8 @@
     <!-- On someone else's board: their backlog, under their day, so the whole of their
          work is one scroll. -->
     <div class="guest-backlog" id="guestBacklog" hidden>
-      <div class="section-heading">backlog</div>
-      <div id="guestBacklogList"></div>
+      <div class="section-heading guest-fold" id="guestBacklogHead" onclick="toggleGuestFold('backlog')">backlog</div>
+      <ul id="guestBacklogList"></ul>
     </div>
 
     <!-- What other people would change about this day. Suggestions sitting beside the
@@ -1970,17 +1991,11 @@
 
   <!-- COLLAB VIEW: sessions with people in your group, each a thread of notes -->
   <div id="collabView" class="tab-panel" style="display:none;">
-    <div class="collab-new" id="sessionNew">
-      <div class="collab-new-title">start a collab</div>
-      <div class="composer-row">
-        <input class="composer-input" id="sessionTitle" placeholder="what's it about?" maxlength="80" autocomplete="off">
-        <button class="composer-send" onclick="createSession()" title="start">↑</button>
-      </div>
-      <div class="collab-pick" id="sessionPick"></div>
-    </div>
     <div class="setting-note" id="collabMsg" hidden></div>
     <div id="sessionList"></div>
-    <div class="empty" id="sessionEmpty" hidden>no sessions yet. start one above, or ask to collab from someone's task.</div>
+    <div class="empty" id="sessionEmpty" hidden>
+      collabs start from a task. open one of yours and tap <b>collab on this</b>, or ask to collab on someone else's.
+    </div>
   </div>
 
   <!-- PEOPLE VIEW: find people, who you follow, and your profile -->
@@ -2608,9 +2623,16 @@ async function openSharedBoard(uid, email) {
   viewingEmail = email || null;
   notes = []; notesKey = null;
   otherStickers = []; otherPins = [];
+  guestOpen = { work: false, backlog: false };
+  // Someone's board is always opened in shared mode, so the "you" tab is there to get home.
+  if (!sharedMode) {
+    sharedMode = true;
+    try { localStorage.setItem('sharedMode', '1'); } catch (e) {}
+  }
   applyViewingChrome();
   await loadAll();
   renderTeam();
+  renderGroup();
   switchTab('day');
   loadOtherStickers(uid);
 }
@@ -2631,10 +2653,8 @@ function applyViewingChrome() {
   document.body.classList.toggle('viewing-shared', viewingShared());
   const banner = document.getElementById('guestBanner');
   const who = document.getElementById('guestBannerWho');
-  if (banner) banner.hidden = !viewingShared();
-  if (who && viewingShared()) {
-    who.textContent = (viewingEmail || 'someone') + "'s board, to read. work only, and you can leave notes.";
-  }
+  // No banner: their title, colours and name in the tab row already say whose this is.
+  if (banner) banner.hidden = true;
   if (viewingShared()) loadTheirLook(viewingUid); else applyMyLook();
   // Nothing on a borrowed board is filed as personal, and there is no picker to say so.
   if (viewingShared()) {
@@ -2875,7 +2895,7 @@ async function deleteNote(id) {
 let people = { me: { name: '', showDay: false, showStickers: false }, requests: [], followers: [], following: [], asks: [], sessions: [] };
 let otherStickers = [];
 let otherPins = [];
-let openSessions = new Set();
+
 
 async function peopleFetch(method, body, query) {
   const key = getToken();
@@ -3022,9 +3042,9 @@ function renderPeopleLists() {
   }
   people.following.forEach(p => {
     const acts = [];
+    // Boards are seen in shared mode, not opened from here: this list is just who you follow.
     if (p.status === 'pending') acts.push(['requested', null]);
-    else if (p.showDay || p.showStickers) acts.push(['open', () => openSharedBoard(p.uid, p.name)]);
-    else acts.push(['private', null]);
+    else if (!p.showDay && !p.showStickers) acts.push(['private', null]);
     acts.push(['unfollow', () => peopleAct('unfollow', p.uid)]);
     following.appendChild(personRow(p.name, acts));
   });
@@ -3201,12 +3221,23 @@ async function acceptAsk(a) {
   await finishAsk(a.id);
 }
 async function acceptCollab(a) {
-  const out = await peopleFetch('POST', { action: 'session_new', title: a.text, uids: [a.from] });
-  if (!out || !out.ok) { setPeopleMsg((out && out.data.error) || "couldn't start that session", 'bad'); return; }
-  openSessions.add(out.data.id);
+  let taskId = a.taskId || null;
+  let date = a.date;
+  // Asked to collab on something that isn't on your day yet: it goes on, then the collab.
+  if (!taskId || !findItemById(taskId)) {
+    const t = mk(a.text, 'work');
+    ensureDay(a.date);
+    daysMap[a.date].push(t);
+    saveDays();
+    renderDateStrip();
+    if (a.date === currentDate) renderDay();
+    taskId = t.id;
+  }
+  const out = await peopleFetch('POST', { action: 'session_new', uids: [a.from], task: { id: taskId, text: a.text, date } });
+  if (!out || !out.ok) { setPeopleMsg((out && out.data.error) || "couldn't start that collab", 'bad'); return; }
   await finishAsk(a.id);
   await loadPeople();
-  switchTab('collab');
+  openCollab(out.data.id);
 }
 async function finishAsk(id) {
   people.asks = people.asks.filter(x => x.id !== id);
@@ -3221,7 +3252,7 @@ async function finishAsk(id) {
 // a draft rather than an entry: a half-written task landing on the list by itself would
 // be worse than waiting for enter.
 const DRAFT_FIELDS = ['dayInput', 'backlogInput', 'growthInput', 'quoteWhoInput',
-  'dayComposerInput', 'sessionTitle'];
+  'dayComposerInput'];
 let sessionDrafts = {};
 function draftKey() { return nsKey('drafts') + (viewingUid ? '::board:' + viewingUid : ''); }
 function saveDrafts() {
@@ -3257,107 +3288,192 @@ function groupPeople() {
   return [...seen.entries()].map(([uid, name]) => ({ uid, name }));
 }
 
+// The collab tab is a list of cards; tapping one opens its own page: the task, who's in
+// it, when you'll work on it, and the notes.
+let openSessionId = null;
+
+function openCollab(id) {
+  openSessionId = id;
+  if (viewingShared()) { openMyBoard().then(() => switchTab('collab')); return; }
+  switchTab('collab');
+  renderSessions();
+}
+
+function whenLabel(w) {
+  if (!w || (!w.date && !w.time)) return '';
+  const d = w.date ? new Date(w.date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).toLowerCase() : '';
+  let t = '';
+  if (w.time) {
+    const [h, m] = w.time.split(':').map(Number);
+    t = ((h % 12) || 12) + (m ? ':' + String(m).padStart(2, '0') : '') + (h < 12 ? 'am' : 'pm');
+  }
+  return [d, t].filter(Boolean).join(' · ');
+}
+
+function memberDots(names) {
+  const members = document.createElement('div');
+  members.className = 'session-members';
+  names.forEach(n => {
+    const dot = document.createElement('span');
+    dot.className = 'person-dot small';
+    dot.textContent = (n[0] || '?').toLowerCase();
+    dot.title = n;
+    members.appendChild(dot);
+  });
+  return members;
+}
+
 function renderSessions() {
   const list = document.getElementById('sessionList');
-  const pick = document.getElementById('sessionPick');
-  if (!list || !pick) return;
+  if (!list) return;
   // A redraw mid-sentence would lose the sentence; the next poll can wait.
   if (list.contains(document.activeElement) && document.activeElement.value) return;
   list.innerHTML = '';
-  document.getElementById('sessionEmpty').hidden = people.sessions.length > 0;
-  people.sessions.slice().reverse().forEach(sess => {
-    const open = openSessions.has(sess.id);
-    const box = document.createElement('div');
-    box.className = 'session' + (open ? ' open' : '');
+  const sess = openSessionId && people.sessions.find(x => x.id === openSessionId);
+  if (openSessionId && !sess) openSessionId = null;
+  document.getElementById('sessionEmpty').hidden = !!sess || people.sessions.length > 0;
+  if (sess) { list.appendChild(buildCollabPage(sess)); return; }
+
+  people.sessions.slice().reverse().forEach(x => {
+    const card = document.createElement('div');
+    card.className = 'session';
     const head = document.createElement('div');
     head.className = 'session-head';
+    const main = document.createElement('div');
+    main.className = 'session-main';
     const title = document.createElement('div');
     title.className = 'session-title';
-    title.textContent = sess.title;
-    const members = document.createElement('div');
-    members.className = 'session-members';
-    sess.memberNames.forEach(n => {
-      const dot = document.createElement('span');
-      dot.className = 'person-dot small';
-      dot.textContent = (n[0] || '?').toLowerCase();
-      dot.title = n;
-      members.appendChild(dot);
-    });
+    title.textContent = x.task ? x.task.text : x.title;
+    const sub = document.createElement('div');
+    sub.className = 'session-sub';
+    const when = whenLabel(x.when);
+    sub.textContent = when ? when : 'no time yet';
+    if (!when) sub.classList.add('unset');
+    main.append(title, sub);
     const count = document.createElement('span');
     count.className = 'session-count';
-    count.textContent = sess.notes.length ? sess.notes.length + '' : '';
-    head.append(title, members, count);
-    head.onclick = () => {
-      if (open) openSessions.delete(sess.id); else openSessions.add(sess.id);
-      renderSessions();
-    };
-    box.appendChild(head);
+    count.textContent = x.notes.length ? x.notes.length + '' : '';
+    head.append(main, memberDots(x.memberNames), count);
+    head.onclick = () => { openSessionId = x.id; renderSessions(); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+    card.appendChild(head);
+    list.appendChild(card);
+  });
+}
 
-    if (open) {
-      const body = document.createElement('div');
-      body.className = 'session-body';
-      const thread = document.createElement('div');
-      thread.className = 'session-thread';
-      if (!sess.notes.length) {
-        const none = document.createElement('div');
-        none.className = 'session-quiet';
-        none.textContent = 'nothing yet. say the first thing.';
-        thread.appendChild(none);
-      }
-      sess.notes.forEach(n => {
-        const msg = document.createElement('div');
-        msg.className = 'bubble' + (n.mine ? ' mine' : '');
-        const by = document.createElement('div');
-        by.className = 'bubble-by';
-        by.textContent = (n.mine ? 'you' : n.byName) + ' · ' + shortWhen(n.at);
-        const text = document.createElement('div');
-        text.className = 'bubble-text';
-        text.textContent = n.text;
-        msg.append(by, text);
-        if (n.mine) {
-          const del = document.createElement('button');
-          del.className = 'remove';
-          del.textContent = '×';
-          del.title = 'take it back';
-          del.onclick = (e) => { e.stopPropagation(); sessionAct({ action: 'session_unnote', id: sess.id, noteId: n.id }); };
-          msg.appendChild(del);
-        }
-        thread.appendChild(msg);
-      });
-      body.appendChild(thread);
-      const composer = makeComposer([{ key: 'note', label: 'note', placeholder: 'add to the session...' }],
-        async (mode, text) => {
-          delete sessionDrafts[sess.id];
-          saveDrafts();
-          await sessionAct({ action: 'session_note', id: sess.id, text });
-          return true;
-        }, null, sessionDrafts[sess.id] || '');
-      // Re-rendering the sessions shouldn't eat what's half-written in one.
-      composer.querySelector('.composer-input').addEventListener('input', (e) => { sessionDrafts[sess.id] = e.target.value; saveDrafts(); });
-      body.appendChild(composer);
-      const leave = document.createElement('button');
-      leave.className = 'person-btn quiet session-leave';
-      leave.textContent = 'leave session';
-      leave.onclick = () => sessionAct({ action: 'session_leave', id: sess.id });
-      body.appendChild(leave);
-      box.appendChild(body);
+function buildCollabPage(sess) {
+  const page = document.createElement('div');
+  page.className = 'collab-page';
+
+  const back = document.createElement('button');
+  back.className = 'collab-back';
+  back.textContent = '\u2190 all collabs';
+  back.onclick = () => { openSessionId = null; renderSessions(); };
+  page.appendChild(back);
+
+  const title = document.createElement('div');
+  title.className = 'collab-title';
+  title.textContent = sess.task ? sess.task.text : sess.title;
+  page.appendChild(title);
+  if (sess.task) {
+    const whose = document.createElement('div');
+    whose.className = 'collab-whose';
+    whose.textContent = (sess.ownerName === 'you' ? 'your task' : sess.ownerName + "'s task")
+      + (sess.task.date ? ' \u00b7 ' + new Date(sess.task.date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).toLowerCase() : '');
+    page.appendChild(whose);
+  }
+  const who = document.createElement('div');
+  who.className = 'collab-who';
+  who.appendChild(memberDots(sess.memberNames));
+  const names = document.createElement('span');
+  names.textContent = sess.memberNames.join(', ');
+  who.appendChild(names);
+  page.appendChild(who);
+
+  // When: anyone in it can set or change the time.
+  const whenBox = document.createElement('div');
+  whenBox.className = 'collab-when';
+  const whenHead = document.createElement('div');
+  whenHead.className = 'collab-when-head';
+  const label = whenLabel(sess.when);
+  whenHead.textContent = label ? 'working on it ' + label : 'when will you work on it?';
+  if (label && sess.whenByName) {
+    const by = document.createElement('span');
+    by.className = 'collab-when-by';
+    by.textContent = 'set by ' + sess.whenByName;
+    whenHead.appendChild(by);
+  }
+  const row = document.createElement('div');
+  row.className = 'collab-when-row';
+  const d = document.createElement('input');
+  d.type = 'date';
+  d.className = 'strip-jump';
+  d.value = (sess.when && sess.when.date) || (sess.task && sess.task.date) || todayStr();
+  const t = document.createElement('input');
+  t.type = 'time';
+  t.className = 'strip-jump';
+  t.value = (sess.when && sess.when.time) || '';
+  const set = document.createElement('button');
+  set.className = 'person-btn';
+  set.textContent = label ? 'change' : 'set time';
+  set.onclick = () => sessionAct({ action: 'session_time', id: sess.id, date: d.value, time: t.value });
+  row.append(d, t, set);
+  if (label) {
+    const clear = document.createElement('button');
+    clear.className = 'person-x';
+    clear.textContent = '\u00d7';
+    clear.title = 'clear the time';
+    clear.onclick = () => sessionAct({ action: 'session_time', id: sess.id, date: '', time: '' });
+    row.appendChild(clear);
+  }
+  whenBox.append(whenHead, row);
+  page.appendChild(whenBox);
+
+  // The notes, as a thread.
+  const thread = document.createElement('div');
+  thread.className = 'session-thread';
+  if (!sess.notes.length) {
+    const none = document.createElement('div');
+    none.className = 'session-quiet';
+    none.textContent = 'nothing yet. say the first thing.';
+    thread.appendChild(none);
+  }
+  sess.notes.forEach(n => {
+    const msg = document.createElement('div');
+    msg.className = 'bubble' + (n.mine ? ' mine' : '');
+    const by = document.createElement('div');
+    by.className = 'bubble-by';
+    by.textContent = (n.mine ? 'you' : n.byName) + ' \u00b7 ' + shortWhen(n.at);
+    const text = document.createElement('div');
+    text.className = 'bubble-text';
+    text.textContent = n.text;
+    msg.append(by, text);
+    if (n.mine) {
+      const del = document.createElement('button');
+      del.className = 'remove';
+      del.textContent = '\u00d7';
+      del.title = 'take it back';
+      del.onclick = () => sessionAct({ action: 'session_unnote', id: sess.id, noteId: n.id });
+      msg.appendChild(del);
     }
-    list.appendChild(box);
+    thread.appendChild(msg);
   });
+  page.appendChild(thread);
+  const composer = makeComposer([{ key: 'note', label: 'note', placeholder: 'add to the collab...' }],
+    async (mode, text) => {
+      delete sessionDrafts[sess.id];
+      saveDrafts();
+      await sessionAct({ action: 'session_note', id: sess.id, text });
+      return true;
+    }, null, sessionDrafts[sess.id] || '');
+  composer.querySelector('.composer-input').addEventListener('input', (e) => { sessionDrafts[sess.id] = e.target.value; saveDrafts(); });
+  page.appendChild(composer);
 
-  const group = groupPeople();
-  document.getElementById('sessionNew').hidden = !group.length;
-  const chosen = new Set([...pick.querySelectorAll('input:checked')].map(i => i.value));
-  pick.innerHTML = '';
-  group.forEach(p => {
-    const label = document.createElement('label');
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.value = p.uid;
-    cb.checked = chosen.has(p.uid);
-    label.append(cb, p.name);
-    pick.appendChild(label);
-  });
+  const leave = document.createElement('button');
+  leave.className = 'person-btn quiet session-leave';
+  leave.textContent = 'leave collab';
+  leave.onclick = async () => { openSessionId = null; await sessionAct({ action: 'session_leave', id: sess.id }); };
+  page.appendChild(leave);
+  return page;
 }
 
 async function sessionAct(body) {
@@ -3375,21 +3491,15 @@ function setCollabMsg(t, tone) {
   el.className = 'setting-note' + (tone ? ' ' + tone : '');
 }
 
-async function createSession() {
-  const title = document.getElementById('sessionTitle');
-  const uids = [...document.querySelectorAll('#sessionPick input:checked')].map(i => i.value);
-  if (!uids.length) { setCollabMsg("tap who it's with first", 'bad'); return; }
-  setCollabMsg('');
-  try {
-    const out = await peopleFetch('POST', { action: 'session_new', title: title.value, uids });
-    if (!out || !out.ok) { setCollabMsg((out && out.data.error) || "that didn't work", 'bad'); return; }
-    title.value = '';
-    document.querySelectorAll('#sessionPick input').forEach(i => { i.checked = false; });
-    openSessions.add(out.data.id);
-    await loadPeople();
-  } catch (e) { setCollabMsg("couldn't reach the server", 'bad'); }
+// Start a collab on one of your own tasks, with people from your group.
+async function startTaskCollab(item, uids) {
+  if (!uids.length) { setNoteMsg('tap who first', 'bad'); return; }
+  const out = await peopleFetch('POST', { action: 'session_new', uids, task: { id: item.id, text: item.text, date: currentDate } });
+  if (!out || !out.ok) { setNoteMsg((out && out.data.error) || "couldn't start that", 'bad'); return; }
+  closeSubPop();
+  await loadPeople();
+  openCollab(out.data.id);
 }
-document.getElementById('sessionTitle').addEventListener('keydown', (e) => { if (e.key === 'Enter') createSession(); });
 
 // ---------- shared mode ----------
 // A switch under the title. On, the tab row becomes your group: "you", then everyone who
@@ -3448,6 +3558,9 @@ function renderGroup() {
     hint.textContent = 'no one yet. follow people on the people tab.';
     row.appendChild(hint);
   }
+  const spacer = document.createElement('div');
+  spacer.className = 'tab-spacer';
+  row.appendChild(spacer);
   // Collab is the group's, so it belongs in the group's row too.
   const collabTab = document.createElement('div');
   collabTab.className = 'tab group-collab' + (activeTab === 'collab' && !viewingShared() ? ' active' : '');
@@ -4460,8 +4573,9 @@ function buildTaskNotes(item, draftText, focus) {
 
   const composer = makeComposer(guest ? TASK_MODES_GUEST : TASK_MODES_OWNER, async (mode, t) => {
     if (mode === 'collab') {
-      const out = await peopleFetch('POST', { action: 'ask', kind: 'collab', uid: viewingUid, date: currentDate, text: t ? item.text + ': ' + t : item.text });
-      setNoteMsg(out && out.ok ? 'asked. if they say yes, a collab session opens for the two of you.' : "couldn't ask", out && out.ok ? 'good' : 'bad');
+      const out = await peopleFetch('POST', { action: 'ask', kind: 'collab', uid: viewingUid, date: currentDate, text: item.text, taskId: item.id });
+      if (out && out.ok && t) await noteFetch('POST', { date: currentDate, text: t, taskId: item.id, kind: 'note' });
+      setNoteMsg(out && out.ok ? 'asked. if they say yes, you get a collab page for it.' : "couldn't ask", out && out.ok ? 'good' : 'bad');
       return !!(out && out.ok);
     }
     const out = await noteFetch('POST', { date: currentDate, text: t, taskId: item.id, kind: mode === 'step' ? 'step' : 'note' });
@@ -4474,6 +4588,40 @@ function buildTaskNotes(item, draftText, focus) {
   composer.querySelector('.composer-input').classList.add('task-note-input');
   composer.querySelector('.composer-input').dataset.allowEmpty = '1';
   wrap.appendChild(composer);
+
+  // On your own task: pick people from your group and open a collab on it.
+  if (!guest && groupPeople().length) {
+    const existing = people.sessions.find(x => x.task && x.task.id === item.id);
+    const box = document.createElement('div');
+    box.className = 'task-collab';
+    if (existing) {
+      const go = document.createElement('button');
+      go.className = 'person-btn';
+      go.textContent = 'open its collab';
+      go.onclick = () => { closeSubPop(); openCollab(existing.id); };
+      box.appendChild(go);
+    } else {
+      const lead = document.createElement('span');
+      lead.className = 'task-collab-lead';
+      lead.textContent = 'collab on this with';
+      const pick = document.createElement('div');
+      pick.className = 'collab-pick';
+      groupPeople().forEach(p => {
+        const label = document.createElement('label');
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.value = p.uid;
+        label.append(cb, p.name);
+        pick.appendChild(label);
+      });
+      const go = document.createElement('button');
+      go.className = 'person-btn';
+      go.textContent = 'start';
+      go.onclick = () => startTaskCollab(item, [...pick.querySelectorAll('input:checked')].map(i => i.value));
+      box.append(lead, pick, go);
+    }
+    wrap.appendChild(box);
+  }
   return wrap;
 }
 
@@ -5609,6 +5757,14 @@ function planOrder(items) {
   }
 }
 
+// On someone else's board, work and backlog start folded: a heading with a count, opened
+// with a tap. Reset each time a board is opened, so every visit starts tidy.
+let guestOpen = { work: false, backlog: false };
+function toggleGuestFold(which) {
+  guestOpen[which] = !guestOpen[which];
+  renderDay();
+}
+
 function renderGuestBacklog() {
   const box = document.getElementById('guestBacklog');
   const list = document.getElementById('guestBacklogList');
@@ -5617,22 +5773,37 @@ function renderGuestBacklog() {
   if (box.hidden) return;
   list.innerHTML = '';
   const work = backlog.filter(i => i.category !== 'personal');
+  const head = document.getElementById('guestBacklogHead');
+  head.textContent = (guestOpen.backlog ? '\u25be ' : '\u25b8 ') + 'backlog \u00b7 ' + work.length;
+  list.hidden = !guestOpen.backlog;
+  if (!guestOpen.backlog) return;
   if (!work.length) {
     const none = document.createElement('div');
     none.className = 'empty';
     none.textContent = 'backlog is empty';
     list.appendChild(none);
   }
+  // Full cards, the same as their tasks; a tap opens it, steps and all.
   work.forEach(i => {
-    const ln = document.createElement('div');
-    ln.className = 'ln';
-    const mk = document.createElement('span');
-    mk.className = 'mk';
-    mk.textContent = '·';
-    const tx = document.createElement('span');
-    tx.textContent = i.text;
-    ln.append(mk, tx);
-    list.appendChild(ln);
+    const li = document.createElement('li');
+    li.className = 'task-item';
+    li.dataset.id = i.id;
+    const top = document.createElement('div');
+    top.className = 'top-row';
+    const label = document.createElement('span');
+    label.className = 'label';
+    label.textContent = i.text;
+    top.appendChild(label);
+    const subs = i.subtasks || [];
+    if (subs.length) {
+      const c = document.createElement('span');
+      c.className = 'sub-count';
+      c.textContent = subs.filter(x => x.done).length + '/' + subs.length;
+      top.appendChild(c);
+    }
+    li.appendChild(top);
+    li.onclick = () => toggleSubPanel(i.id);
+    list.appendChild(li);
   });
 }
 
@@ -5860,6 +6031,21 @@ function renderDay() {
   const items = daysMap[currentDate].filter(i => !i.movedTo);
   renderCheckin();
   renderGuestBacklog();
+
+  const workHead = document.querySelector('#dayView .section-heading.work');
+  if (workHead) {
+    if (viewingShared()) {
+      const n = items.filter(i => i.category !== 'personal' && !i.done).length;
+      workHead.textContent = (guestOpen.work ? '\u25be ' : '\u25b8 ') + 'work \u00b7 ' + n;
+      workHead.classList.add('guest-fold');
+      workHead.onclick = () => toggleGuestFold('work');
+    } else {
+      workHead.textContent = 'work';
+      workHead.classList.remove('guest-fold');
+      workHead.onclick = null;
+    }
+  }
+  document.getElementById('dayView').classList.toggle('work-folded', viewingShared() && !guestOpen.work);
 
   ['work', 'personal'].forEach(category => {
     const suffix = category === 'work' ? 'Work' : 'Personal';

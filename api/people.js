@@ -13,7 +13,8 @@ import {
 // POST /api/people { action: follow | unfollow | approve | deny | remove, uid }
 // POST /api/people { action: ask, uid, date, text, kind? }   ask to add to their day, or (kind: collab) to work on something together
 // POST /api/people { action: ask_done, id }                  you added it, or said no
-// POST /api/people { action: session_new, title, uids }      start a collab session
+// POST /api/people { action: session_new, uids, task: { id?, text, date?, owner? } }   a collab, always about a task
+// POST /api/people { action: session_time, id, date, time }  when to work on it (either can be empty)
 // POST /api/people { action: session_note, id, text }        write in one
 // POST /api/people { action: session_unnote, id, noteId }    take your note back
 // POST /api/people { action: session_leave, id }
@@ -135,6 +136,8 @@ export default async function handler(req, res) {
         sessions: sessions.map((x) => ({
           ...x,
           memberNames: x.members.map((u) => (u === me ? 'you' : nameOf(profiles, u))),
+          ownerName: x.task ? (x.task.owner === me ? 'you' : nameOf(profiles, x.task.owner)) : null,
+          whenByName: x.when ? (x.when.by === me ? 'you' : nameOf(profiles, x.when.by)) : null,
           notes: x.notes.map((n) => ({ ...n, byName: n.by === me ? 'you' : nameOf(profiles, n.by), mine: n.by === me })),
         })),
         requests: follows.filter((f) => f.to === me && f.status === 'pending').map((f) => person(f.from, f.fromEmail)),
@@ -213,6 +216,9 @@ export default async function handler(req, res) {
         asks.push({
           id: newId(), from: me, fromEmail: auth.email || null, to: uid, date, text,
           kind: body.kind === 'collab' ? 'collab' : 'task', at: new Date().toISOString(),
+          // A collab asked for from one of their tasks remembers which, so the session
+          // can point back at it.
+          taskId: body.kind === 'collab' && body.taskId ? String(body.taskId).slice(0, 64) : undefined,
         });
         await putAsks(asks);
         res.status(200).json({ ok: true });
@@ -233,9 +239,21 @@ export default async function handler(req, res) {
           const group = groupOf(await getFollows(), me);
           const uids = [...new Set((Array.isArray(body.uids) ? body.uids : []).map(String))].filter((u) => group.has(u));
           if (!uids.length) { res.status(400).json({ error: 'pick someone from your group' }); return; }
+          // A collab is always about something to do: a task, or one being asked for.
+          const t = body.task && typeof body.task === 'object' ? body.task : null;
+          const taskText = cleanText(t && t.text).slice(0, 200);
+          if (!taskText) { res.status(400).json({ error: 'collabs start from a task' }); return; }
+          const members = [me, ...uids];
+          const owner = t.owner && members.includes(String(t.owner)) ? String(t.owner) : me;
           const session = {
-            id: newId(), title: cleanText(body.title).slice(0, 80) || 'collab session',
-            members: [me, ...uids], createdBy: me, at: new Date().toISOString(), notes: [],
+            id: newId(), title: taskText.slice(0, 80),
+            task: {
+              id: t.id ? String(t.id).slice(0, 64) : null,
+              text: taskText,
+              date: /^\d{4}-\d{2}-\d{2}$/.test(String(t.date || '')) ? t.date : null,
+              owner,
+            },
+            members, createdBy: me, at: new Date().toISOString(), notes: [],
           };
           sessions.push(session);
           await putSessions(sessions);
@@ -251,6 +269,15 @@ export default async function handler(req, res) {
           session.notes.push({ id: newId(), by: me, text, at: new Date().toISOString() });
         } else if (action === 'session_unnote') {
           session.notes = session.notes.filter((n) => !(n.id === body.noteId && n.by === me));
+        } else if (action === 'session_time') {
+          const date = String(body.date || '');
+          const time = String(body.time || '');
+          if (!date && !time) delete session.when;
+          else {
+            if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) { res.status(400).json({ error: 'which day?' }); return; }
+            if (time && !/^\d{2}:\d{2}$/.test(time)) { res.status(400).json({ error: 'what time?' }); return; }
+            session.when = { date: date || null, time: time || null, by: me, at: new Date().toISOString() };
+          }
         } else if (action === 'session_leave') {
           session.members = session.members.filter((u) => u !== me);
           if (!session.members.length) sessions = sessions.filter((x) => x !== session);
