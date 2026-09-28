@@ -130,7 +130,7 @@ export default async function handler(req, res) {
       const asks = await getAsks();
       const sessions = (await getSessions()).filter((x) => x.members.includes(me));
       res.status(200).json({
-        me: { name: mine.name || '', showDay: !!mine.showDay, showStickers: !!mine.showStickers, theme: mine.theme || {} },
+        me: { name: mine.name || '', showDay: !!mine.showDay, showStickers: !!mine.showStickers, approveFirst: !!mine.approveFirst, theme: mine.theme || {} },
         asks: asks.filter((a) => a.to === me).map((a) => ({ ...a, fromName: nameOf(profiles, a.from, a.fromEmail) })),
         sessions: sessions.map((x) => ({
           ...x,
@@ -164,6 +164,7 @@ export default async function handler(req, res) {
       }
       if (body.showDay != null) p.showDay = !!body.showDay;
       if (body.showStickers != null) p.showStickers = !!body.showStickers;
+      if (body.approveFirst != null) p.approveFirst = !!body.approveFirst;
       // How the board looks: a hue (null is the original blue), how saturated, the title
       // at the top, and a background photo stored like any other.
       if (body.theme && typeof body.theme === 'object') {
@@ -190,7 +191,7 @@ export default async function handler(req, res) {
           .filter((p) => p && PHOTO_ID.test(String(p.photo || '')))
           .map((p) => ({ photo: p.photo, rot: String(p.rot || '0deg').slice(0, 12), dx: num(p.dx), top: num(p.top) })));
       }
-      res.status(200).json({ ok: true, me: { name: p.name || '', showDay: !!p.showDay, showStickers: !!p.showStickers, theme: p.theme || {} } });
+      res.status(200).json({ ok: true, me: { name: p.name || '', showDay: !!p.showDay, showStickers: !!p.showStickers, approveFirst: !!p.approveFirst, theme: p.theme || {} } });
       return;
     }
 
@@ -270,7 +271,10 @@ export default async function handler(req, res) {
         // Only people who've put a name up can be found, so only they can be asked.
         if (!profiles[uid] || !profiles[uid].name) { res.status(404).json({ error: 'no one by that id' }); return; }
         if (!follows.some((f) => f.from === me && f.to === uid)) {
-          follows.push({ from: me, fromEmail: auth.email || null, to: uid, status: 'pending', at: new Date().toISOString() });
+          follows.push({
+            from: me, fromEmail: auth.email || null, to: uid,
+            status: profiles[uid].approveFirst ? 'pending' : 'approved', at: new Date().toISOString(),
+          });
         }
       } else if (action === 'unfollow') {
         follows = follows.filter((f) => !(f.from === me && f.to === uid));

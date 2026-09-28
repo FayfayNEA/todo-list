@@ -279,7 +279,14 @@ const stickersPath = (uid) => (uid === OWNER_UID ? 'stickers.json' : `u/${uid}/s
 
 export const getProfiles = () => readJson(PROFILES, {});
 export const putProfiles = (v) => writeJson(PROFILES, v);
-export const getFollows = () => readJson(FOLLOWS, []);
+// Following is instant unless the person being followed has asked to approve followers
+// first. A request left waiting under the old rules counts as soon as that's not the case.
+export async function getFollows() {
+  const [follows, profiles] = await Promise.all([readJson(FOLLOWS, []), readJson(PROFILES, {})]);
+  return follows.map((f) => (f.status === 'pending' && !(profiles[f.to] && profiles[f.to].approveFirst)
+    ? { ...f, status: 'approved', approvedAt: f.approvedAt || new Date().toISOString() }
+    : f));
+}
 export const putFollows = (v) => writeJson(FOLLOWS, v);
 export const getStickers = (uid) => readJson(stickersPath(uid), []);
 // Asks: someone who can see your day asking for something to be added to it.

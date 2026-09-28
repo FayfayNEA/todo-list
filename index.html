@@ -2025,6 +2025,11 @@
         <span class="switch-track"><span class="switch-knob"></span></span>
         show my sticker board and polaroids
       </label>
+      <label class="shared-switch in-settings">
+        <input type="checkbox" id="profileApproveFirst" onchange="saveProfile({ approveFirst: this.checked })">
+        <span class="switch-track"><span class="switch-knob"></span></span>
+        approve followers first
+      </label>
       <div class="setting-note" id="peopleMsg" hidden></div>
     </div>
   </div>
@@ -2943,6 +2948,7 @@ function renderPeople() {
   if (nameEl && document.activeElement !== nameEl) nameEl.value = people.me.name || '';
   document.getElementById('profileShowDay').checked = !!people.me.showDay;
   document.getElementById('profileShowStickers').checked = !!people.me.showStickers;
+  document.getElementById('profileApproveFirst').checked = !!people.me.approveFirst;
 
   const reqs = document.getElementById('followRequests');
   const asks = document.getElementById('askList');
@@ -3016,7 +3022,7 @@ function renderPeopleLists() {
   }
   people.following.forEach(p => {
     const acts = [];
-    if (p.status === 'pending') acts.push(['asked', null]);
+    if (p.status === 'pending') acts.push(['requested', null]);
     else if (p.showDay || p.showStickers) acts.push(['open', () => openSharedBoard(p.uid, p.name)]);
     else acts.push(['private', null]);
     acts.push(['unfollow', () => peopleAct('unfollow', p.uid)]);
@@ -3177,8 +3183,8 @@ async function runSearch(term) {
     }
     out.data.results.forEach(r => {
       const act = r.status === 'approved' ? ['following', null]
-        : r.status === 'pending' ? ['asked', null]
-        : ['ask to follow', () => peopleAct('follow', r.uid)];
+        : r.status === 'pending' ? ['requested', null]
+        : ['follow', () => peopleAct('follow', r.uid)];
       box.appendChild(personRow(r.name, [act]));
     });
   } catch (e) {}
