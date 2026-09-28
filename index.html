@@ -338,6 +338,9 @@
     padding: 26px 22px 30px;
     border-radius: 0 0 8px 8px;
   }
+  #boardTitle { outline: none; border-radius: 4px; cursor: text; display: inline-block; min-width: 40px; }
+  #boardTitle:focus { background: var(--highlight); box-shadow: 0 0 0 4px var(--highlight); }
+  body.viewing-shared #boardTitle { cursor: default; }
   h1 {
     font-size: 13px;
     font-weight: 600;
@@ -383,8 +386,9 @@
     transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
   }
   /* Pushed to the far end of the row: it isn't one of the lists, it's the drawer. */
+  /* Metrics and settings sit together at the right end: about you, not your day. */
+  .tab-metrics { margin-left: auto; }
   .tab-settings {
-    margin-left: auto;
     margin-right: 0;
     padding: 7px 14px 6px;
     display: flex; align-items: center;
@@ -937,7 +941,7 @@
     font-size: 11px; color: var(--muted); letter-spacing: 0.04em; margin: 0 0 4px;
   }
   .shared-switch.in-settings { display: flex; margin: 10px 0 0; }
-  .header-switch { margin: 2px 0 14px; }
+  .header-switch { display: flex; width: fit-content; margin: 2px 0 14px; }
   .group-tabs[hidden], #mainTabs[hidden] { display: none; }
   .guest-views { display: inline-flex; gap: 10px; }
   .group-hint { align-self: center; font-size: 11px; color: var(--muted); padding: 0 12px; }
@@ -1058,9 +1062,14 @@
   .person-btn.quiet:hover { color: var(--text); border-color: var(--border); background: transparent; }
   .person-status { font-size: 10px; color: var(--muted); padding: 3px 9px; border-radius: 20px; background: var(--highlight); letter-spacing: 0.04em; }
   .ask-text { color: var(--text); }
-  .session-new { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
-  .session-new button { align-self: flex-start; }
-  #sessionPick { display: flex; flex-wrap: wrap; gap: 6px; }
+  .collab-new {
+    background: var(--card); border: 1px solid var(--border-light); border-radius: 10px;
+    padding: 12px; margin-bottom: 14px;
+  }
+  .collab-new[hidden] { display: none; }
+  .collab-new-title { font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: 0.06em; margin-bottom: 8px; }
+  .collab-pick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
   #sessionPick label {
     font-size: 11px; padding: 3px 9px; border: 1px solid var(--border-light); border-radius: 20px;
     cursor: pointer; color: var(--muted);
@@ -1068,12 +1077,32 @@
   #sessionPick input { display: none; }
   #sessionPick label:has(input:checked) { color: var(--text); border-color: var(--btn-blue); background: var(--highlight); }
   .session {
-    border: 1px solid var(--border-light); border-radius: 8px; background: var(--card);
-    margin-top: 8px; overflow: hidden;
+    border: 1px solid var(--border-light); border-radius: 10px; background: var(--card);
+    margin-top: 8px; overflow: hidden; animation: taskIn 0.28s cubic-bezier(.22,.9,.32,1);
+    transition: border-color 0.15s ease;
   }
+  .session:hover, .session.open { border-color: var(--border); }
+  .session-title { flex: 1; min-width: 0; font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .session-members { display: flex; }
+  .session-members .person-dot + .person-dot { margin-left: -6px; }
+  .person-dot.small { width: 22px; height: 22px; font-size: 10px; border: 2px solid var(--card); }
+  .session-count { min-width: 18px; text-align: center; font-size: 10px; color: #fff; background: var(--btn-blue); border-radius: 10px; padding: 1px 6px; }
+  .session-count:empty { display: none; }
+  .session-thread { display: flex; flex-direction: column; gap: 8px; padding: 12px 0 4px; }
+  .session-quiet { font-size: 11px; color: var(--muted); text-align: center; padding: 8px 0; }
+  .bubble {
+    position: relative; align-self: flex-start; max-width: 82%;
+    background: var(--bg); border: 1px solid var(--border-light); border-radius: 12px 12px 12px 4px;
+    padding: 7px 26px 8px 11px; font-size: 12px; line-height: 1.5;
+  }
+  .bubble.mine { align-self: flex-end; background: var(--highlight); border-color: var(--border); border-radius: 12px 12px 4px 12px; }
+  .bubble-by { font-size: 10px; color: var(--muted); margin-bottom: 2px; }
+  .bubble-text { white-space: pre-wrap; word-break: break-word; }
+  .bubble .remove { position: absolute; right: 4px; top: 4px; }
+  .session-leave { margin-top: 10px; }
   .session-head {
-    display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
-    padding: 10px 12px; cursor: pointer; font-size: 12px;
+    display: flex; align-items: center; gap: 10px;
+    padding: 11px 12px; cursor: pointer; font-size: 12px;
   }
   .session-head .members { font-size: 10px; color: var(--muted); }
   .session-body { padding: 0 12px 12px; border-top: 1px solid var(--border-light); }
@@ -1148,8 +1177,8 @@
   body.viewing-shared #backlogListPersonal,
   body.viewing-shared #backlogEmptyPersonal,
   body.viewing-shared .tab[data-tab="growth"],
-  body.viewing-shared .tab[data-tab="manifesto"],
   body.viewing-shared .tab[data-tab="people"],
+  body.viewing-shared .tab[data-tab="collab"],
   body.viewing-shared .moodboard .pin:not(.other),
   body.viewing-shared .shared-switch:not(.header-switch),
   body.viewing-shared .schedule-row,
@@ -1673,10 +1702,10 @@
     <div class="tab active" data-tab="day" onclick="switchTab('day')">Day</div>
     <div class="tab" data-tab="backlog" onclick="switchTab('backlog')">Backlog</div>
     <div class="tab" data-tab="growth" onclick="switchTab('growth')">growth</div>
-    <div class="tab" data-tab="manifesto" onclick="switchTab('manifesto')">manifesto</div>
     <div class="tab" data-tab="stickers" onclick="switchTab('stickers')">stickers</div>
-    <div class="tab" data-tab="metrics" onclick="switchTab('metrics')">Metrics</div>
     <div class="tab" data-tab="people" onclick="switchTab('people')">people</div>
+    <div class="tab" data-tab="collab" onclick="switchTab('collab')">collab</div>
+    <div class="tab tab-metrics" data-tab="metrics" onclick="switchTab('metrics')">metrics</div>
     <div class="tab tab-settings" data-tab="settings" onclick="switchTab('settings')"
          title="settings" role="button" aria-label="settings">
       <svg class="tab-icon" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
@@ -1792,18 +1821,23 @@
   <!-- GROWTH VIEW: ideas and quotes, one tab, a section each -->
   <div id="growthView" class="tab-panel" style="display:none;">
     <div class="add-box">
-      <textarea id="growthInput" rows="2" placeholder="an idea: a hobby, a splurge, something to try..."></textarea>
+      <textarea id="growthInput" rows="2" placeholder="something you believe, or want to live by..."></textarea>
       <div class="hint" id="growthHint">enter to add &middot; shift + enter for a line break &middot; tap one to open it</div>
     </div>
     <div class="add-row-outside">
       <input class="quote-who-input" id="quoteWhoInput" placeholder="who said it"
              autocomplete="off" spellcheck="false" hidden>
       <select id="newGrowthKind" onchange="renderGrowthKind()">
+        <option value="manifesto">manifesto</option>
         <option value="idea">idea</option>
         <option value="quote">quote</option>
       </select>
       <button onclick="submitGrowthInput()">add</button>
     </div>
+
+    <div class="section-heading">manifesto</div>
+    <ol id="manifestoList"></ol>
+    <div class="empty" id="manifestoEmpty" style="display:none;">nothing written yet</div>
 
     <div class="section-heading">ideas</div>
     <ul id="ideasList"></ul>
@@ -1812,19 +1846,6 @@
     <div class="section-heading">quotes</div>
     <div id="quotesList"></div>
     <div class="empty" id="quotesEmpty" style="display:none;">nothing here yet</div>
-  </div>
-
-  <!-- MANIFESTO VIEW: what you stand for, one value at a time, written and rewritten in place -->
-  <div id="manifestoView" class="tab-panel" style="display:none;">
-    <div class="add-box">
-      <textarea id="manifestoInput" rows="2" placeholder="something you believe, or want to live by..."></textarea>
-      <div class="hint">enter to add &middot; tap one to rewrite it</div>
-    </div>
-    <div class="add-row-outside">
-      <button onclick="submitManifestoInput()">add</button>
-    </div>
-    <ol id="manifestoList"></ol>
-    <div class="empty" id="manifestoEmpty" style="display:none;">nothing written yet</div>
   </div>
 
   <!-- STICKERS VIEW -->
@@ -1949,7 +1970,22 @@
     </div>
   </div>
 
-  <!-- PEOPLE VIEW: your profile, who you follow, who follows you, and collab sessions -->
+  <!-- COLLAB VIEW: sessions with people in your group, each a thread of notes -->
+  <div id="collabView" class="tab-panel" style="display:none;">
+    <div class="collab-new" id="sessionNew">
+      <div class="collab-new-title">start a collab</div>
+      <div class="composer-row">
+        <input class="composer-input" id="sessionTitle" placeholder="what's it about?" maxlength="80" autocomplete="off">
+        <button class="composer-send" onclick="createSession()" title="start">↑</button>
+      </div>
+      <div class="collab-pick" id="sessionPick"></div>
+    </div>
+    <div class="setting-note" id="collabMsg" hidden></div>
+    <div id="sessionList"></div>
+    <div class="empty" id="sessionEmpty" hidden>no sessions yet. start one above, or ask to collab from someone's task.</div>
+  </div>
+
+  <!-- PEOPLE VIEW: your profile, who you follow, and who follows you -->
   <div id="peopleView" class="tab-panel" style="display:none;">
     <div class="setting-group">
       <div class="setting-title">your profile</div>
@@ -1986,17 +2022,6 @@
                autocomplete="off" spellcheck="false">
       </div>
       <div id="peopleResults"></div>
-    </div>
-
-    <div class="setting-group">
-      <div class="setting-title">collab sessions</div>
-      <div class="setting-note">shared notes with people in your group.</div>
-      <div id="sessionList"></div>
-      <div class="session-new" id="sessionNew">
-        <input class="quote-who-input" id="sessionTitle" placeholder="what's it about?" maxlength="80" autocomplete="off">
-        <div id="sessionPick"></div>
-        <button class="tray-reset" onclick="createSession()">start a session</button>
-      </div>
     </div>
 
     <div class="setting-group">
@@ -3171,6 +3196,7 @@ async function acceptCollab(a) {
   openSessions.add(out.data.id);
   await finishAsk(a.id);
   await loadPeople();
+  switchTab('collab');
 }
 async function finishAsk(id) {
   people.asks = people.asks.filter(x => x.id !== id);
@@ -3184,7 +3210,7 @@ async function finishAsk(id) {
 // switch, a reload or a phone killing the page in the background doesn't lose it. It is
 // a draft rather than an entry: a half-written task landing on the list by itself would
 // be worse than waiting for enter.
-const DRAFT_FIELDS = ['dayInput', 'backlogInput', 'growthInput', 'quoteWhoInput', 'manifestoInput',
+const DRAFT_FIELDS = ['dayInput', 'backlogInput', 'growthInput', 'quoteWhoInput',
   'dayComposerInput', 'sessionTitle'];
 let sessionDrafts = {};
 function draftKey() { return nsKey('drafts') + (viewingUid ? '::board:' + viewingUid : ''); }
@@ -3224,69 +3250,84 @@ function groupPeople() {
 function renderSessions() {
   const list = document.getElementById('sessionList');
   const pick = document.getElementById('sessionPick');
+  if (!list || !pick) return;
+  // A redraw mid-sentence would lose the sentence; the next poll can wait.
+  if (list.contains(document.activeElement) && document.activeElement.value) return;
   list.innerHTML = '';
+  document.getElementById('sessionEmpty').hidden = people.sessions.length > 0;
   people.sessions.slice().reverse().forEach(sess => {
+    const open = openSessions.has(sess.id);
     const box = document.createElement('div');
-    box.className = 'session';
+    box.className = 'session' + (open ? ' open' : '');
     const head = document.createElement('div');
     head.className = 'session-head';
-    const title = document.createElement('span');
-    title.textContent = (openSessions.has(sess.id) ? '▾ ' : '▸ ') + sess.title;
-    const members = document.createElement('span');
-    members.className = 'members';
-    members.textContent = sess.memberNames.join(', ') + ' · ' + sess.notes.length + (sess.notes.length === 1 ? ' note' : ' notes');
-    head.append(title, members);
+    const title = document.createElement('div');
+    title.className = 'session-title';
+    title.textContent = sess.title;
+    const members = document.createElement('div');
+    members.className = 'session-members';
+    sess.memberNames.forEach(n => {
+      const dot = document.createElement('span');
+      dot.className = 'person-dot small';
+      dot.textContent = (n[0] || '?').toLowerCase();
+      dot.title = n;
+      members.appendChild(dot);
+    });
+    const count = document.createElement('span');
+    count.className = 'session-count';
+    count.textContent = sess.notes.length ? sess.notes.length + '' : '';
+    head.append(title, members, count);
     head.onclick = () => {
-      if (openSessions.has(sess.id)) openSessions.delete(sess.id); else openSessions.add(sess.id);
+      if (open) openSessions.delete(sess.id); else openSessions.add(sess.id);
       renderSessions();
     };
     box.appendChild(head);
 
-    if (openSessions.has(sess.id)) {
+    if (open) {
       const body = document.createElement('div');
       body.className = 'session-body';
+      const thread = document.createElement('div');
+      thread.className = 'session-thread';
+      if (!sess.notes.length) {
+        const none = document.createElement('div');
+        none.className = 'session-quiet';
+        none.textContent = 'nothing yet. say the first thing.';
+        thread.appendChild(none);
+      }
       sess.notes.forEach(n => {
-        const row = document.createElement('div');
-        row.className = 'session-note';
-        row.textContent = n.text;
+        const msg = document.createElement('div');
+        msg.className = 'bubble' + (n.mine ? ' mine' : '');
         const by = document.createElement('div');
-        by.className = 'by';
-        by.textContent = n.byName + ' · ' + shortWhen(n.at);
-        row.appendChild(by);
+        by.className = 'bubble-by';
+        by.textContent = (n.mine ? 'you' : n.byName) + ' · ' + shortWhen(n.at);
+        const text = document.createElement('div');
+        text.className = 'bubble-text';
+        text.textContent = n.text;
+        msg.append(by, text);
         if (n.mine) {
           const del = document.createElement('button');
           del.className = 'remove';
           del.textContent = '×';
-          del.onclick = () => sessionAct({ action: 'session_unnote', id: sess.id, noteId: n.id });
-          row.appendChild(del);
+          del.title = 'take it back';
+          del.onclick = (e) => { e.stopPropagation(); sessionAct({ action: 'session_unnote', id: sess.id, noteId: n.id }); };
+          msg.appendChild(del);
         }
-        body.appendChild(row);
+        thread.appendChild(msg);
       });
-      const write = document.createElement('div');
-      write.className = 'session-write';
-      const ta = document.createElement('textarea');
-      ta.rows = 2;
-      ta.placeholder = 'add a note...';
+      body.appendChild(thread);
+      const composer = makeComposer([{ key: 'note', label: 'note', placeholder: 'add to the session...' }],
+        async (mode, text) => {
+          delete sessionDrafts[sess.id];
+          saveDrafts();
+          await sessionAct({ action: 'session_note', id: sess.id, text });
+          return true;
+        }, null, sessionDrafts[sess.id] || '');
       // Re-rendering the sessions shouldn't eat what's half-written in one.
-      ta.value = sessionDrafts[sess.id] || '';
-      ta.oninput = () => { sessionDrafts[sess.id] = ta.value; saveDrafts(); };
-      const send = () => {
-        const text = ta.value.trim();
-        if (!text) return;
-        delete sessionDrafts[sess.id];
-        saveDrafts();
-        sessionAct({ action: 'session_note', id: sess.id, text });
-      };
-      ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } };
-      const btn = document.createElement('button');
-      btn.className = 'tray-reset';
-      btn.textContent = 'add';
-      btn.onclick = send;
-      write.append(ta, btn);
-      body.appendChild(write);
-      const leave = document.createElement('div');
-      leave.className = 'invite-act session-leave';
-      leave.textContent = 'leave this session';
+      composer.querySelector('.composer-input').addEventListener('input', (e) => { sessionDrafts[sess.id] = e.target.value; saveDrafts(); });
+      body.appendChild(composer);
+      const leave = document.createElement('button');
+      leave.className = 'person-btn quiet session-leave';
+      leave.textContent = 'leave session';
       leave.onclick = () => sessionAct({ action: 'session_leave', id: sess.id });
       body.appendChild(leave);
       box.appendChild(body);
@@ -3312,24 +3353,33 @@ function renderSessions() {
 async function sessionAct(body) {
   try {
     const out = await peopleFetch('POST', body);
-    if (!out || !out.ok) { setPeopleMsg((out && out.data.error) || "that didn't work", 'bad'); return; }
+    if (!out || !out.ok) { setCollabMsg((out && out.data.error) || "that didn't work", 'bad'); return; }
     await loadPeople();
-  } catch (e) { setPeopleMsg("couldn't reach the server", 'bad'); }
+  } catch (e) { setCollabMsg("couldn't reach the server", 'bad'); }
+}
+
+function setCollabMsg(t, tone) {
+  const el = document.getElementById('collabMsg');
+  if (!el) return;
+  el.textContent = t || ''; el.hidden = !t;
+  el.className = 'setting-note' + (tone ? ' ' + tone : '');
 }
 
 async function createSession() {
   const title = document.getElementById('sessionTitle');
   const uids = [...document.querySelectorAll('#sessionPick input:checked')].map(i => i.value);
-  if (!uids.length) { setPeopleMsg('pick at least one person for the session', 'bad'); return; }
+  if (!uids.length) { setCollabMsg("tap who it's with first", 'bad'); return; }
+  setCollabMsg('');
   try {
     const out = await peopleFetch('POST', { action: 'session_new', title: title.value, uids });
-    if (!out || !out.ok) { setPeopleMsg((out && out.data.error) || "that didn't work", 'bad'); return; }
+    if (!out || !out.ok) { setCollabMsg((out && out.data.error) || "that didn't work", 'bad'); return; }
     title.value = '';
     document.querySelectorAll('#sessionPick input').forEach(i => { i.checked = false; });
     openSessions.add(out.data.id);
     await loadPeople();
-  } catch (e) { setPeopleMsg("couldn't reach the server", 'bad'); }
+  } catch (e) { setCollabMsg("couldn't reach the server", 'bad'); }
 }
+document.getElementById('sessionTitle').addEventListener('keydown', (e) => { if (e.key === 'Enter') createSession(); });
 
 // ---------- shared mode ----------
 // A switch under the title. On, the tab row becomes your group: "you", then everyone who
@@ -3366,7 +3416,7 @@ function renderGroup() {
   row.innerHTML = '';
   const add = (label, uid, onClick, mood) => {
     const t = document.createElement('div');
-    t.className = 'tab' + ((uid || null) === (viewingUid || null) && activeTab !== 'settings' ? ' active' : '');
+    t.className = 'tab' + ((uid || null) === (viewingUid || null) && !['settings', 'collab'].includes(activeTab) ? ' active' : '');
     t.dataset.uid = uid || '';
     t.textContent = label;
     if (mood != null && STRESS_LEVELS[mood]) {
@@ -3388,6 +3438,12 @@ function renderGroup() {
     hint.textContent = 'no one yet. follow people on the people tab.';
     row.appendChild(hint);
   }
+  // Collab is the group's, so it belongs in the group's row too.
+  const collabTab = document.createElement('div');
+  collabTab.className = 'tab group-collab' + (activeTab === 'collab' && !viewingShared() ? ' active' : '');
+  collabTab.textContent = 'collab';
+  collabTab.onclick = async () => { if (viewingShared()) await openMyBoard(); switchTab('collab'); };
+  row.appendChild(collabTab);
   // Settings are yours wherever you are, so the gear stays; it takes you home first.
   const gear = document.querySelector('#mainTabs .tab-settings').cloneNode(true);
   gear.removeAttribute('onclick');
@@ -3412,6 +3468,18 @@ function readLookCache() {
 }
 function writeLookCache(look) { try { localStorage.setItem(nsKey('look'), JSON.stringify(look)); } catch (e) {} }
 
+// The title at the top is the board's name: tap it and type. Same setting as the title in
+// settings, so the two never disagree. Someone else's is theirs.
+(function titleEditable() {
+  const h1 = document.getElementById('boardTitle');
+  if (!h1) return;
+  editableText(h1, () => h1.dataset.saved || DEFAULT_TITLE, (v) => {
+    h1.dataset.saved = v;
+    saveLook({ title: v === DEFAULT_TITLE ? null : v });
+  });
+  h1.title = 'tap to rename';
+})();
+
 function applyLook(theme, bg, cardBg) {
   theme = theme || {};
   const wrap = document.querySelector('.wrap');
@@ -3433,7 +3501,15 @@ function applyLook(theme, bg, cardBg) {
   }
   const title = theme.title || DEFAULT_TITLE;
   const h1 = document.getElementById('boardTitle');
-  if (h1) h1.textContent = title;
+  if (h1) {
+    h1.dataset.saved = title;
+    if (document.activeElement !== h1) h1.textContent = title;
+    const mine = !viewingShared();
+    if (h1.isContentEditable !== mine) {
+      if (mine) { try { h1.contentEditable = 'plaintext-only'; } catch (e) {} if (!h1.isContentEditable) h1.contentEditable = 'true'; }
+      else h1.contentEditable = 'false';
+    }
+  }
   document.title = title;
   document.body.classList.toggle('has-bg', !!bg);
   if (bg) document.body.style.setProperty('--user-bg', 'url("' + bg + '")');
@@ -4112,10 +4188,10 @@ const TAB_PANELS = {
   day: 'dayView',
   backlog: 'backlogView',
   growth: 'growthView',
-  manifesto: 'manifestoView',
   stickers: 'stickersView',
   metrics: 'metricsView',
   people: 'peopleView',
+  collab: 'collabView',
   settings: 'settingsView',
 };
 
@@ -4135,9 +4211,8 @@ function switchTab(tab) {
     panel.classList.add('entering');
   });
   if (tab === 'metrics') renderMetrics();
-  if (tab === 'growth') { renderIdeas(); renderQuotes(); }
-  if (tab === 'manifesto') renderManifesto();
-  if (tab === 'people') loadPeople();
+  if (tab === 'growth') { renderManifesto(); renderIdeas(); renderQuotes(); }
+  if (tab === 'people' || tab === 'collab') loadPeople();
   if (tab === 'stickers') renderStickerTray();
   if (tab === 'backlog') { renderDateStrip(); renderBacklog(); }
   if (tab === 'settings') { renderAccount(); loadInvites(); loadTeam(); loadTwoStep(); }
@@ -4399,7 +4474,7 @@ function saveIdeas() { queuePush(); }
 // joins, and a quote is the only one of the two that wants an attribution.
 function growthKind() {
   const sel = document.getElementById('newGrowthKind');
-  return sel && sel.value === 'quote' ? 'quote' : 'idea';
+  return sel && ['quote', 'manifesto'].includes(sel.value) ? sel.value : 'idea';
 }
 
 function renderGrowthKind() {
@@ -4410,13 +4485,16 @@ function renderGrowthKind() {
   if (input) {
     input.placeholder = quote
       ? 'a quote you like, or one you made up...'
-      : 'an idea: a hobby, a splurge, something to try...';
+      : growthKind() === 'manifesto'
+        ? 'something you believe, or want to live by...'
+        : 'an idea: a hobby, a splurge, something to try...';
     input.focus();
   }
 }
 
 function submitGrowthInput() {
   if (growthKind() === 'quote') { submitQuoteInput(); return; }
+  if (growthKind() === 'manifesto') { submitManifestoInput(); return; }
   submitIdeasInput();
 }
 
@@ -4643,7 +4721,7 @@ function closeQuotePop() {
 // Values, not tasks: nothing to finish. Each one is edited where it sits, and the ×
 // is the only way one goes away, so clearing the words just puts them back.
 function submitManifestoInput() {
-  const input = document.getElementById('manifestoInput');
+  const input = document.getElementById('growthInput');
   const text = (input.value || '').trim();
   if (!text) { input.focus(); return; }
   manifesto.push({ id: crypto.randomUUID(), text });
@@ -5446,9 +5524,6 @@ editableText(document.getElementById('subPopTitle'),
 editableText(document.getElementById('ideaPopTitle'),
   () => { const it = ideas.find(i => i.id === openIdeaId); return it ? it.text : ''; },
   (v) => { const it = ideas.find(i => i.id === openIdeaId); if (it) it.text = v; });
-document.getElementById('manifestoInput').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitManifestoInput(); }
-});
 document.getElementById('growthInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitGrowthInput(); }
 });
