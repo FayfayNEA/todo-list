@@ -213,7 +213,13 @@
   .theme-chip.active {
     background: var(--btn-blue); border-color: var(--btn-blue); color: #fff;
   }
-  .sticker-tray { display: flex; flex-wrap: wrap; gap: 10px; }
+  .sticker-tray { display: block; }
+  .tray-group { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 6px; }
+  .tray-group-head {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: var(--muted);
+    margin: 14px 0 8px; padding-bottom: 5px; border-bottom: 1px solid var(--border-light);
+  }
+  .tray-group-head:first-child { margin-top: 2px; }
   .tray-item {
     width: 96px; height: 96px;
     display: flex; align-items: center; justify-content: center;
@@ -7073,10 +7079,27 @@ function renderStickerTray() {
   if (!tray) return;
   renderStickerThemes();
   tray.innerHTML = '';
-  const shown = stickerTheme === 'all'
-    ? STICKER_CATALOG
-    : STICKER_CATALOG.filter(s => s[2] === stickerTheme);
-  shown.forEach(([name, size]) => {
+  // "all" is every group, one after another under its own heading; picking a group
+  // shows just that one.
+  const groups = stickerTheme === 'all' ? STICKER_THEMES.filter(t => t !== 'all') : [stickerTheme];
+  groups.forEach(theme => {
+    const items = STICKER_CATALOG.filter(s => s[2] === theme);
+    if (!items.length) return;
+    if (groups.length > 1) {
+      const head = document.createElement('div');
+      head.className = 'tray-group-head';
+      head.textContent = theme;
+      tray.appendChild(head);
+    }
+    const row = document.createElement('div');
+    row.className = 'tray-group';
+    items.forEach(s => row.appendChild(trayTile(s)));
+    tray.appendChild(row);
+  });
+}
+
+function trayTile([name, size]) {
+  {
     const tile = document.createElement('div');
     tile.className = 'tray-item';
     tile.dataset.name = name;
@@ -7088,8 +7111,8 @@ function renderStickerTray() {
     img.draggable = false;
     tile.appendChild(img);
     tile.addEventListener('pointerdown', (e) => startTrayDrag(e, name, size));
-    tray.appendChild(tile);
-  });
+    return tile;
+  }
 }
 
 // Below this the board is background decoration, not something you arrange.
