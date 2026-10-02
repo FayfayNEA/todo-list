@@ -119,7 +119,7 @@ export default async function handler(req, res) {
         const layout = await getPins(uid);
         const pins = (await Promise.all(layout.map(async (p) => {
           const photo = await getPhoto(uid, p.photo);
-          return photo && photo.src ? { src: photo.src, rot: p.rot, dx: p.dx, top: p.top } : null;
+          return photo && photo.src ? { src: photo.src, rot: p.rot, dx: p.dx, top: p.top, w: p.w } : null;
         }))).filter(Boolean);
         res.status(200).json({ uid, name: nameOf(profiles, uid), stickers: await getStickers(uid), pins });
         return;
@@ -199,7 +199,7 @@ export default async function handler(req, res) {
         const num = (v) => (Number.isFinite(v) ? Math.round(v) : 0);
         await putPins(me, body.pins.slice(0, MAX_PINS)
           .filter((p) => p && PHOTO_ID.test(String(p.photo || '')))
-          .map((p) => ({ photo: p.photo, rot: String(p.rot || '0deg').slice(0, 12), dx: num(p.dx), top: num(p.top) })));
+          .map((p) => ({ photo: p.photo, rot: String(p.rot || '0deg').slice(0, 12), dx: num(p.dx), top: num(p.top), w: Number.isFinite(p.w) ? Math.min(300, Math.max(60, Math.round(p.w))) : undefined })));
       }
       res.status(200).json({ ok: true, me: { name: p.name || '', showDay: !!p.showDay, showStickers: !!p.showStickers, approveFirst: !!p.approveFirst, theme: p.theme || {} } });
       return;

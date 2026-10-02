@@ -198,6 +198,10 @@
     pointer-events: none;
   }
   .sticker.resizing .sticker-size { opacity: 1; }
+  /* Polaroids resize from the same corner grip as stickers. */
+  .pin:hover .sticker-grip, .pin.resizing .sticker-grip { opacity: 1; transform: scale(1); }
+  .pin.resizing { animation: none; z-index: 60; }
+  .pin.resizing .sticker-size { opacity: 1; }
   .theme-bar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
   .theme-chip {
     padding: 5px 11px;
@@ -261,8 +265,8 @@
   .pin img, .pin video {
     border-radius: 8px;
     display: block;
-    width: 100px;
-    height: 128px;
+    width: var(--pin-w, 100px);
+    height: calc(var(--pin-w, 100px) * 1.28);
     object-fit: cover;
     filter: sepia(0.12) saturate(0.9) contrast(1.02);
     pointer-events: none;
@@ -3172,10 +3176,10 @@ function currentPolaroids() {
       const pos = positions[pinId] && typeof positions[pinId].dx === 'number'
         ? positions[pinId]
         : refFromScreen(pin, parseFloat(pin.style.left) || 0, parseFloat(pin.style.top) || 0);
-      out.push({ src: img.src, rot: getComputedStyle(pin).getPropertyValue('--rot').trim() || '0deg', dx: pos.dx, top: pos.top });
+      out.push({ src: img.src, rot: getComputedStyle(pin).getPropertyValue('--rot').trim() || '0deg', dx: pos.dx, top: pos.top, w: (positions[pinId] && positions[pinId].w) || null });
     });
   }
-  extraPins.forEach(p => out.push({ src: p.src, rot: p.rot, dx: p.dx, top: p.top }));
+  extraPins.forEach(p => out.push({ src: p.src, rot: p.rot, dx: p.dx, top: p.top, w: p.w || null }));
   return out;
 }
 
@@ -3192,7 +3196,7 @@ async function sendBoard() {
       done.add(id);
       try { localStorage.setItem(nsKey('uploadedPhotos'), JSON.stringify([...done])); } catch (e) {}
     }
-    layout.push({ photo: id, rot: p.rot, dx: p.dx, top: p.top });
+    layout.push({ photo: id, rot: p.rot, dx: p.dx, top: p.top, w: p.w });
   }
   await peopleFetch('PUT', { pins: layout });
 }
@@ -6887,6 +6891,7 @@ function renderPlacedStickers() {
       const pin = document.createElement('div');
       pin.className = 'pin extra other';
       pin.style.setProperty('--rot', p.rot);
+      if (p.w) setPinWidth(pin, p.w);
       pin.style.pointerEvents = 'none';
       const img = document.createElement('img');
       img.src = p.src;
@@ -7237,6 +7242,7 @@ function renderExtraPins() {
       renderExtraPins();
     });
 
+    if (p.w) setPinWidth(pin, p.w);
     attachPinDrag(pin, p.uid, {
       onTap: () => openPhotoLightbox(p.uid),
       onMoved: (left, top) => {
@@ -7244,6 +7250,7 @@ function renderExtraPins() {
         saveExtraPins();
       },
     });
+    attachPinResize(pin, () => p.w || 100, (w) => { p.w = w; saveExtraPins(); });
 
     board.appendChild(pin);
     const settle = () => placeFromRef(pin, p.dx, p.top);
@@ -7350,12 +7357,27 @@ function loadMoodboardPhotos() {
       const img = pin.querySelector('img');
       if (img) img.src = saved[pinId];
     }
+    if (positions[pinId] && positions[pinId].w) setPinWidth(pin, positions[pinId].w);
     applyPinPosition(pin, positions[pinId], pinId);
     const pinImg = pin.querySelector('img');
     if (pinImg && !pinImg.complete) {
       pinImg.addEventListener('load', () => applyPinPosition(pin, positions[pinId], pinId), { once: true });
     }
     attachPinDrag(pin, pinId, { onTap: () => openPhotoLightbox(pinId) });
+    attachPinResize(pin, () => {
+      let pos = {};
+      try { pos = (JSON.parse(localStorage.getItem(nsKey(MOODBOARD_POS_KEY)) || '{}')[pinId]) || {}; } catch (e) {}
+      return pos.w || 100;
+    }, (w) => {
+      let all = {};
+      try { all = JSON.parse(localStorage.getItem(nsKey(MOODBOARD_POS_KEY)) || '{}'); } catch (e) {}
+      // A polaroid still in its default spot gets that spot written down along with its size.
+      const here = all[pinId] && typeof all[pinId].dx === 'number' ? all[pinId]
+        : refFromScreen(pin, parseFloat(pin.style.left) || 0, parseFloat(pin.style.top) || 0);
+      all[pinId] = { ...here, w };
+      try { localStorage.setItem(nsKey(MOODBOARD_POS_KEY), JSON.stringify(all)); } catch (e) {}
+      publishBoard();
+    });
   });
 }
 
@@ -7414,13 +7436,58 @@ function attachPinDrag(pin, pinId, opts = {}) {
     if (opts.onMoved) { opts.onMoved(left, top, e); return; }
     let positions = {};
     try { positions = JSON.parse(localStorage.getItem(storageKey) || '{}'); } catch (err) {}
-    positions[pinId] = refFromScreen(pin, left, top);
+    positions[pinId] = { ...(positions[pinId] || {}), ...refFromScreen(pin, left, top) };
     try { localStorage.setItem(storageKey, JSON.stringify(positions)); } catch (err) {}
     publishBoard();
   }
 
   pin.addEventListener('pointerup', endDrag);
   pin.addEventListener('pointercancel', endDrag);
+}
+
+// ---------- polaroid size ----------
+// Width of the photo in px (the frame follows); height keeps the polaroid's 100:128.
+const PIN_MIN = 60, PIN_MAX = 280;
+function setPinWidth(pin, w, badge) {
+  const v = Math.round(Math.min(PIN_MAX, Math.max(PIN_MIN, w || 100)));
+  pin.style.setProperty('--pin-w', v + 'px');
+  if (badge) badge.textContent = v + 'px';
+  return v;
+}
+function attachPinResize(pin, getW, onDone) {
+  const grip = document.createElement('div');
+  grip.className = 'sticker-grip';
+  grip.title = 'drag to resize';
+  const badge = document.createElement('div');
+  badge.className = 'sticker-size';
+  pin.append(grip, badge);
+  let sx = 0, sy = 0, sw = 100, w = 100, active = false;
+  grip.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.stopPropagation(); e.preventDefault();
+    active = true; sx = e.clientX; sy = e.clientY; sw = w = getW();
+    pin.classList.add('resizing');
+    setPinWidth(pin, sw, badge);
+    grip.setPointerCapture(e.pointerId);
+  });
+  grip.addEventListener('pointermove', (e) => {
+    if (!active) return;
+    e.stopPropagation();
+    // On screen the board may be scaled, so a drag of n px is n / k in stored size.
+    const k = boardK() || 1;
+    w = setPinWidth(pin, sw + ((e.clientX - sx) + (e.clientY - sy)) / 2 / k, badge);
+  });
+  const end = (e) => {
+    if (!active) return;
+    active = false;
+    e.stopPropagation();
+    if (grip.hasPointerCapture(e.pointerId)) grip.releasePointerCapture(e.pointerId);
+    pin.classList.remove('resizing');
+    onDone(w);
+  };
+  grip.addEventListener('pointerup', end);
+  grip.addEventListener('pointercancel', end);
+  grip.addEventListener('dblclick', (e) => e.stopPropagation());
 }
 
 function findPin(pinId) {
