@@ -598,7 +598,7 @@
     letter-spacing: -2px; padding: 4px 2px; user-select: none; touch-action: none;
     opacity: 0; transition: opacity 0.15s ease;
   }
-  .manifesto-item:hover .drag-grip { opacity: 1; }
+  .manifesto-item:hover .drag-grip, li.backlog-item:hover .drag-grip { opacity: 1; }
   @media (hover: none) { .drag-grip { opacity: 0.7; } }
   .quote-card { touch-action: pan-y; }
   /* A touch has to hold a row still before it picks up, so the row has to *look*
@@ -5356,7 +5356,8 @@ function attachDrag(li, opts = {}) {
   li.addEventListener('pointerdown', (e) => {
     // Somebody else's day is not yours to reorder; tapping to read it still works.
     if (viewingShared()) return;
-    if (e.target.closest('.checkbox') || e.target.closest('.remove') || e.target.closest('.schedule-row')) return;
+    // The controls inside a row stay controls; anywhere else on it picks the row up.
+    if (e.target.closest('.checkbox, .remove, input, select, button, .sub-remove')) return;
     if (opts.handle && !e.target.closest(opts.handle)) return;
     if (li.classList.contains('settling')) return;
     down = true;
@@ -6293,7 +6294,12 @@ function renderBacklog() {
     remove.textContent = '\u00d7';
     remove.onclick = () => removeBacklogItem(item.id);
 
+    const grip = document.createElement('span');
+    grip.className = 'drag-grip';
+    grip.textContent = '\u22ee\u22ee';
+    grip.title = 'drag to reorder, or onto a day to schedule it';
     topRow.appendChild(label);
+    topRow.appendChild(grip);
     topRow.appendChild(remove);
 
     const scheduleRow = document.createElement('div');
