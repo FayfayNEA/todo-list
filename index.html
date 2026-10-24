@@ -587,6 +587,20 @@
     border: 1.5px dashed var(--border); animation: none;
   }
   li.task-item.dragging > * { visibility: hidden; }
+  .manifesto-item.dragging, .quote-card.dragging {
+    background: transparent; box-shadow: none; animation: none;
+    outline: 1.5px dashed var(--border); outline-offset: -2px; border-radius: 8px;
+  }
+  .manifesto-item.dragging > *, .quote-card.dragging > * { visibility: hidden; }
+  .manifesto-item.dragging::before { visibility: hidden; }
+  .drag-grip {
+    flex-shrink: 0; align-self: center; cursor: grab; color: var(--border); font-size: 13px;
+    letter-spacing: -2px; padding: 4px 2px; user-select: none; touch-action: none;
+    opacity: 0; transition: opacity 0.15s ease;
+  }
+  .manifesto-item:hover .drag-grip { opacity: 1; }
+  @media (hover: none) { .drag-grip { opacity: 0.7; } }
+  .quote-card { touch-action: pan-y; }
   /* A touch has to hold a row still before it picks up, so the row has to *look*
      picked up, otherwise the only feedback is the page suddenly refusing to scroll. */
   /* Where the row would land: a line in the gap rather than an inserted placeholder, so
@@ -1962,15 +1976,15 @@
     </div>
 
     <div class="section-heading">manifesto</div>
-    <ol id="manifestoList"></ol>
+    <ol id="manifestoList" data-reorder="manifesto"></ol>
     <div class="empty" id="manifestoEmpty" style="display:none;">nothing written yet</div>
 
     <div class="section-heading">ideas</div>
-    <ul id="ideasList"></ul>
+    <ul id="ideasList" data-reorder="ideas"></ul>
     <div class="empty" id="ideasEmpty" style="display:none;">no ideas yet</div>
 
     <div class="section-heading">quotes</div>
-    <div id="quotesList"></div>
+    <div id="quotesList" data-reorder="quotes"></div>
     <div class="empty" id="quotesEmpty" style="display:none;">nothing here yet</div>
   </div>
 
@@ -4675,6 +4689,7 @@ function renderIdeas() {
     }
     topRow.appendChild(remove);
     li.appendChild(topRow);
+    attachDrag(li, { lists: ['ideas'], onReorder: (drop) => reorderGrowth('ideas', drop) });
     listEl.appendChild(li);
   });
 }
@@ -4760,6 +4775,7 @@ function renderQuotes() {
       card.appendChild(who);
     }
     card.appendChild(remove);
+    attachDrag(card, { rowSel: '.quote-card', lists: ['quotes'], onReorder: (drop) => reorderGrowth('quotes', drop) });
     listEl.appendChild(card);
   });
 }
@@ -4907,8 +4923,15 @@ function renderManifesto(force) {
     remove.title = 'remove this';
     remove.onclick = (e) => { e.stopPropagation(); removeManifestoItem(value.id); };
 
-    head.append(text, count, remove);
+    const grip = document.createElement('span');
+    grip.className = 'drag-grip';
+    grip.textContent = '\u22ee\u22ee';
+    grip.title = 'drag to reorder';
+    grip.onclick = (e) => e.stopPropagation();
+    head.append(text, count, grip, remove);
     li.appendChild(head);
+    attachDrag(li, { rowSel: '.manifesto-item', lists: ['manifesto'], handle: '.drag-grip',
+      onReorder: (drop) => reorderGrowth('manifesto', drop) });
 
     if (open) {
       const body = document.createElement('div');
@@ -5283,7 +5306,7 @@ function slideFrom(el, dy) {
 
 // Rearranging what's already on screen (the gap moving during a drag).
 function flipLayout(panel, mutate) {
-  const els = [...panel.querySelectorAll('li.task-item:not(.dragging), .section-heading, .empty, .completed-toggle, .guest-backlog')];
+  const els = [...panel.querySelectorAll('li.task-item:not(.dragging), .manifesto-item:not(.dragging), .quote-card:not(.dragging), .section-heading, .empty, .completed-toggle, .guest-backlog')];
   const before = new Map(els.map(e => [e, e.getBoundingClientRect().top]));
   mutate();
   els.forEach(e => {
@@ -5295,9 +5318,10 @@ function flipLayout(panel, mutate) {
 
 // A full re-render: rows are rebuilt, so they're matched up again by id.
 function flipRender(panel, render) {
-  const before = new Map([...panel.querySelectorAll('li.task-item[data-id]')].map(e => [e.dataset.id, e.getBoundingClientRect().top]));
+  const ROWS = '.task-item[data-id], .manifesto-item[data-id], .quote-card[data-id]';
+  const before = new Map([...panel.querySelectorAll(ROWS)].map(e => [e.dataset.id, e.getBoundingClientRect().top]));
   render();
-  panel.querySelectorAll('li.task-item[data-id]').forEach(e => {
+  panel.querySelectorAll(ROWS).forEach(e => {
     const was = before.get(e.dataset.id);
     if (was == null) return;                       // genuinely new: let it pop in as usual
     e.getAnimations().forEach(a => a.cancel());    // it was already here; no entrance
@@ -5305,7 +5329,12 @@ function flipRender(panel, render) {
   });
 }
 
+// opts: onReorder / onDay / onBacklog / onTap, plus for lists other than tasks:
+//   rowSel  what a row in the list is (default li.task-item)
+//   lists   which data-reorder lists this row may move between (default: any)
+//   handle  only start a drag from this part of the row
 function attachDrag(li, opts = {}) {
+  const ROW = opts.rowSel || 'li.task-item';
   let down = false;
   let dragging = false;
   let armed = false;        // touch only: the hold finished, the row is picked up
@@ -5328,6 +5357,7 @@ function attachDrag(li, opts = {}) {
     // Somebody else's day is not yours to reorder; tapping to read it still works.
     if (viewingShared()) return;
     if (e.target.closest('.checkbox') || e.target.closest('.remove') || e.target.closest('.schedule-row')) return;
+    if (opts.handle && !e.target.closest(opts.handle)) return;
     if (li.classList.contains('settling')) return;
     down = true;
     armed = false;
@@ -5416,14 +5446,15 @@ function attachDrag(li, opts = {}) {
     const panel = li.closest('.tab-panel');
     const zone = el.closest('[data-reorder]');
     if (!zone || !panel || zone.closest('.tab-panel') !== panel) return null;
-    const row = el.closest('li.task-item');
+    if (opts.lists && !opts.lists.includes(zone.dataset.reorder)) return null;
+    const row = el.closest(ROW);
     if (row === li) return null;
     if (row && row.parentElement && row.parentElement.dataset.reorder) {
       const r = row.getBoundingClientRect();
       const before = y < r.top + r.height / 2 ? row : row.nextElementSibling;
       return { ul: row.parentElement, before };
     }
-    const ul = panel.querySelector(`ul[data-reorder="${zone.dataset.reorder}"]`);
+    const ul = panel.querySelector(`[data-reorder="${zone.dataset.reorder}"]:not(.section-heading):not(.empty)`);
     if (!ul) return null;
     // A heading sits above its list, so it means the top; anywhere else, the bottom.
     if (zone.classList.contains('section-heading')) return { ul, before: ul.firstElementChild };
@@ -5544,6 +5575,10 @@ function attachDrag(li, opts = {}) {
     dragging = false;
     document.body.classList.remove('dragging-item');
     try { li.releasePointerCapture(e.pointerId); } catch (err) {}
+    // The click that follows letting go is the end of a drag, not a tap to open it.
+    const swallow = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+    window.addEventListener('click', swallow, { capture: true, once: true });
+    setTimeout(() => window.removeEventListener('click', swallow, { capture: true }), 0);
 
     const { chip, backlogTab } = e.type === 'pointerup' ? dropTargetsAt(e.clientX, e.clientY) : {};
     clearDropHighlights();
@@ -5554,12 +5589,12 @@ function attachDrag(li, opts = {}) {
     let drop = null;
     if (ul && ul.dataset.reorder && !(ul === homeParent && li.nextElementSibling === homeNext)) {
       let next = li.nextElementSibling;
-      while (next && !next.classList.contains('task-item')) next = next.nextElementSibling;
+      while (next && !next.matches(ROW)) next = next.nextElementSibling;
       drop = next
         ? { category: ul.dataset.reorder, at: 'before', beforeId: next.dataset.id }
         : { category: ul.dataset.reorder, at: 'end' };
       // Exactly what's on screen, top to bottom, is the order that's kept.
-      drop.order = [...ul.querySelectorAll(':scope > li.task-item[data-id]')].map(r => r.dataset.id);
+      drop.order = [...ul.children].filter(r => r.matches(ROW) && r.dataset.id).map(r => r.dataset.id);
     }
 
     const target = chip || backlogTab;
@@ -5633,6 +5668,22 @@ function reorderDayItem(id, drop) {
   daysMap[currentDate] = next;
   saveDays();
   renderDay();
+}
+
+// Growth lists: what's on screen is the order. Ideas you've done live in metrics, so
+// they keep their place after the open ones.
+function reorderGrowth(which, drop) {
+  if (!Array.isArray(drop.order)) return;
+  const lists = { manifesto, ideas, quotes };
+  const list = lists[which];
+  const byId = new Map(list.map(i => [i.id, i]));
+  const shown = drop.order.map(id => byId.get(id)).filter(Boolean);
+  const kept = new Set(shown);
+  const next = [...shown, ...list.filter(i => !kept.has(i))];
+  if (which === 'manifesto') { manifesto = next; renderManifesto(true); }
+  else if (which === 'ideas') { ideas = next; renderIdeas(); }
+  else { quotes = next; renderQuotes(); }
+  queuePush();
 }
 
 function reorderBacklog(id, drop) {
