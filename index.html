@@ -1164,6 +1164,13 @@
   .chip-row button:hover { color: var(--text); border-color: var(--border); transform: scale(1.05); }
   .chip-row button.on { color: var(--text); border-color: var(--btn-blue); background: var(--highlight); }
   .assign-none { font-size: 11px; color: var(--muted); }
+  .due-pick {
+    font: inherit; font-size: 11px; padding: 3px 8px; border-radius: 20px; cursor: pointer;
+    background: var(--card); color: var(--muted); border: 1px solid var(--border-light);
+  }
+  .due-pick.on { color: var(--text); border-color: var(--btn-blue); background: var(--highlight); }
+  .len-pill.due.soon { background: #f3e2c8; color: #8a5a1c; }
+  .len-pill.due.late { background: #f2d0c8; color: #93352a; }
   .len-pill {
     flex-shrink: 0; align-self: center; font-size: 10px; letter-spacing: 0.03em;
     padding: 1px 7px; border-radius: 10px; background: var(--highlight); color: var(--accent);
@@ -4307,12 +4314,7 @@ function buildItemLi(item, onToggle, onRemove, onDrop) {
   topRow.appendChild(caret);
   topRow.appendChild(label);
   if (subs.length) topRow.appendChild(count);
-  if (item.estimateMin && !item.done) {
-    const len = document.createElement('span');
-    len.className = 'len-pill';
-    len.textContent = lengthLabel(item.estimateMin);
-    topRow.appendChild(len);
-  }
+  if (item.deadline && !item.done) topRow.appendChild(duePill(item.deadline));
   if (Array.isArray(item.assignees) && item.assignees.length) {
     const dots = document.createElement('span');
     dots.className = 'assignee-dots';
@@ -4409,40 +4411,51 @@ function refreshSubPop() {
   if (onThisDay) body.appendChild(buildTaskNotes(item, draftText, hadFocus));
 }
 
-// ---------- who's on it, and how long it takes ----------
-// The only shared planning left: put people from your group on a task, and say how long
-// it should take. The length is the task's estimate, which the planner orders the day by.
-const LENGTHS = [[15, '15m'], [30, '30m'], [60, '1h'], [120, '2h'], [240, '4h']];
-function lengthLabel(min) {
-  const hit = LENGTHS.find(([m]) => m === min);
-  if (hit) return hit[1];
-  return min >= 60 ? (Math.round(min / 30) / 2) + 'h' : min + 'm';
-}
-
+// ---------- who's on it, and when it's due ----------
+// The only shared planning left: put people from your group on a task, and say when it's
+// due. The due date is the task's deadline, which the planner orders the day by.
 function buildAssignBox(item) {
   const box = document.createElement('div');
   box.className = 'assign-box';
   box.onclick = (e) => e.stopPropagation();
 
-  const lenRow = document.createElement('div');
-  lenRow.className = 'assign-row';
-  const lenLabel = document.createElement('span');
-  lenLabel.className = 'assign-label';
-  lenLabel.textContent = 'how long';
-  const lens = document.createElement('div');
-  lens.className = 'chip-row';
-  LENGTHS.forEach(([m, label]) => {
+  // When it's due. The planner already ranks the day by deadline, so this moves it too.
+  const dueRow = document.createElement('div');
+  dueRow.className = 'assign-row';
+  const dueLabel = document.createElement('span');
+  dueLabel.className = 'assign-label';
+  dueLabel.textContent = 'due';
+  const dues = document.createElement('div');
+  dues.className = 'chip-row';
+  const setDue = (d) => {
+    if (!d || item.deadline === d) delete item.deadline; else item.deadline = d;
+    saveDays(); renderDay(); refreshSubPop();
+  };
+  const today = todayStr();
+  const dow = new Date(today + 'T00:00:00').getDay();
+  const friday = addDaysToStr(today, ((5 - dow) + 7) % 7 || 7);
+  [['today', today], ['tomorrow', addDaysToStr(today, 1)], ['friday', friday]].forEach(([label, d]) => {
     const b = document.createElement('button');
     b.textContent = label;
-    if (item.estimateMin === m) b.classList.add('on');
-    b.onclick = () => {
-      if (item.estimateMin === m) delete item.estimateMin; else item.estimateMin = m;
-      saveDays(); renderDay(); refreshSubPop();
-    };
-    lens.appendChild(b);
+    if (item.deadline === d) b.classList.add('on');
+    b.onclick = () => setDue(d);
+    dues.appendChild(b);
   });
-  lenRow.append(lenLabel, lens);
-  box.appendChild(lenRow);
+  const pick = document.createElement('input');
+  pick.type = 'date';
+  pick.className = 'due-pick' + (item.deadline ? ' on' : '');
+  pick.value = item.deadline || '';
+  pick.onchange = () => { if (pick.value) { item.deadline = pick.value; saveDays(); renderDay(); refreshSubPop(); } };
+  dues.appendChild(pick);
+  if (item.deadline) {
+    const clear = document.createElement('button');
+    clear.textContent = '\u00d7';
+    clear.title = 'no due date';
+    clear.onclick = () => setDue(null);
+    dues.appendChild(clear);
+  }
+  dueRow.append(dueLabel, dues);
+  box.appendChild(dueRow);
 
   const group = groupPeople();
   const whoRow = document.createElement('div');
@@ -4474,6 +4487,26 @@ function buildAssignBox(item) {
   whoRow.append(whoLabel, who);
   box.appendChild(whoRow);
   return box;
+}
+
+// "due today", "due tomorrow", "due fri", "due oct 30"; overdue says how late.
+function dueLabel(d) {
+  if (!d) return '';
+  const today = todayStr();
+  const days = Math.round((new Date(d + 'T00:00:00') - new Date(today + 'T00:00:00')) / 86400000);
+  if (days < 0) return days === -1 ? 'due yesterday' : (-days) + ' days late';
+  if (days === 0) return 'due today';
+  if (days === 1) return 'due tomorrow';
+  const dt = new Date(d + 'T00:00:00');
+  return 'due ' + (days < 7
+    ? dt.toLocaleDateString(undefined, { weekday: 'short' })
+    : dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })).toLowerCase();
+}
+function duePill(d) {
+  const el = document.createElement('span');
+  el.className = 'len-pill due' + (d < todayStr() ? ' late' : d === todayStr() ? ' soon' : '');
+  el.textContent = dueLabel(d);
+  return el;
 }
 
 function nameForUid(uid) {
@@ -4512,12 +4545,7 @@ function renderAssigned() {
     meta.className = 'assigned-meta';
     meta.textContent = 'from ' + t.ownerName + (t.with.length ? ' \u00b7 with ' + t.with.join(', ') : '') + (t.done ? ' \u00b7 done' : '');
     row.append(text, meta);
-    if (t.estimateMin) {
-      const len = document.createElement('span');
-      len.className = 'len-pill';
-      len.textContent = lengthLabel(t.estimateMin);
-      row.appendChild(len);
-    }
+    if (t.deadline) row.appendChild(duePill(t.deadline));
     list.appendChild(row);
   });
 }

@@ -100,7 +100,7 @@ export default async function handler(req, res) {
 
       if (q.assigned) {
         // Only people you're connected with can put you on a task, and only the task
-        // itself travels: its words, how long it should take, and whether it's done.
+        // itself travels: its words, when it's due, and whether it's done.
         const date = String(q.date || '').slice(0, 10);
         const out = [];
         for (const uid of groupOf(follows, me)) {
@@ -110,7 +110,7 @@ export default async function handler(req, res) {
             if (!t || t.movedTo || !Array.isArray(t.assignees) || !t.assignees.includes(me)) continue;
             out.push({
               owner: uid, ownerName: nameOf(profiles, uid), id: t.id, text: String(t.text || ''),
-              done: !!t.done, estimateMin: Number.isFinite(t.estimateMin) ? t.estimateMin : null,
+              done: !!t.done, deadline: /^\d{4}-\d{2}-\d{2}$/.test(String(t.deadline || '')) ? t.deadline : null,
               with: t.assignees.filter((u) => u !== me).map((u) => nameOf(profiles, u)),
             });
           }
