@@ -581,7 +581,12 @@
     to { opacity: 1; transform: scale(1); }
   }
   li.task-item.leaving { opacity: 0; transform: translateX(24px); }
-  li.task-item.dragging { opacity: 0.4; }
+  /* The row being dragged stays in the list as the empty slot it will drop into. */
+  li.task-item.dragging {
+    background: transparent; box-shadow: none;
+    border: 1.5px dashed var(--border); animation: none;
+  }
+  li.task-item.dragging > * { visibility: hidden; }
   /* A touch has to hold a row still before it picks up, so the row has to *look*
      picked up, otherwise the only feedback is the page suddenly refusing to scroll. */
   /* Where the row would land: a line in the gap rather than an inserted placeholder, so
@@ -737,7 +742,12 @@
   .sub-add:focus { border-style: solid; border-color: var(--btn-blue); background: var(--card); }
   .sub-empty { font-size: 11px; color: var(--muted); opacity: 0.8; padding: 2px 0; }
 
-  .drag-clone { position: fixed; pointer-events: none; z-index: 1000; opacity: 0.92; box-shadow: 0 6px 16px rgba(0,0,0,0.2); border-radius: 8px; }
+  .drag-clone {
+    position: fixed; pointer-events: none; z-index: 1000; margin: 0;
+    box-shadow: 0 14px 30px hsl(var(--hue) calc(30% * var(--sat)) 25% / 0.28), 0 3px 8px rgba(0,0,0,0.12);
+    border-radius: 8px; transform-origin: 50% 50%; will-change: transform, left, top;
+    animation: none; transition: none; cursor: grabbing;
+  }
 
   /* Sits under the steps in the opened card, with a rule to separate it from them. */
   .sub-move { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-light); flex-wrap: wrap; }
@@ -5454,6 +5464,43 @@ const DRAG_EDGE = 76;        // how close to the edge starts it
 const DRAG_EDGE_SPEED = 16;  // px per frame at full tilt
 let edgeRaf = null;
 
+// ---------- moving things smoothly ----------
+// Anything that changes place in a list glides there from where it was (FLIP: measure,
+// change, measure again, animate the difference), so nothing ever teleports.
+const MOVE_MS = 220;
+const MOVE_EASE = 'cubic-bezier(.2,.8,.2,1)';
+const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function slideFrom(el, dy) {
+  if (REDUCED_MOTION || Math.abs(dy) < 0.5) return;
+  el.animate([{ transform: `translateY(${dy}px)` }, { transform: 'translateY(0)' }],
+    { duration: MOVE_MS, easing: MOVE_EASE });
+}
+
+// Rearranging what's already on screen (the gap moving during a drag).
+function flipLayout(panel, mutate) {
+  const els = [...panel.querySelectorAll('li.task-item:not(.dragging), .section-heading, .empty, .completed-toggle, .guest-backlog')];
+  const before = new Map(els.map(e => [e, e.getBoundingClientRect().top]));
+  mutate();
+  els.forEach(e => {
+    // Measure where it really is now, not where a running slide has it this frame.
+    e.getAnimations().forEach(a => a.cancel());
+    slideFrom(e, before.get(e) - e.getBoundingClientRect().top);
+  });
+}
+
+// A full re-render: rows are rebuilt, so they're matched up again by id.
+function flipRender(panel, render) {
+  const before = new Map([...panel.querySelectorAll('li.task-item[data-id]')].map(e => [e.dataset.id, e.getBoundingClientRect().top]));
+  render();
+  panel.querySelectorAll('li.task-item[data-id]').forEach(e => {
+    const was = before.get(e.dataset.id);
+    if (was == null) return;                       // genuinely new: let it pop in as usual
+    e.getAnimations().forEach(a => a.cancel());    // it was already here; no entrance
+    slideFrom(e, was - e.getBoundingClientRect().top);
+  });
+}
+
 function attachDrag(li, opts = {}) {
   let down = false;
   let dragging = false;
@@ -5461,8 +5508,12 @@ function attachDrag(li, opts = {}) {
   let byTouch = false;
   let holdTimer = null;
   let clone = null;
+  let pointerId = null;
   let startX = 0, startY = 0;
   let lastX = 0, lastY = 0;
+  let grabX = 0, grabY = 0; // where on the row it was held, so it doesn't jump to the pointer
+  let homeParent = null, homeNext = null;
+  let tilt = 0, tiltTarget = 0, lift = 0, prevX = 0, tiltRaf = null;
   const THRESHOLD = 6;
 
   function cancelHold() {
@@ -5473,12 +5524,19 @@ function attachDrag(li, opts = {}) {
     // Somebody else's day is not yours to reorder; tapping to read it still works.
     if (viewingShared()) return;
     if (e.target.closest('.checkbox') || e.target.closest('.remove') || e.target.closest('.schedule-row')) return;
+    if (li.classList.contains('settling')) return;
     down = true;
     armed = false;
+    pointerId = e.pointerId;
     byTouch = e.pointerType !== 'mouse';
     startX = e.clientX; startY = e.clientY;
     lastX = e.clientX; lastY = e.clientY;
     try { li.setPointerCapture(e.pointerId); } catch (err) {}
+    // Listened for on the window: the row itself moves around the list during a drag,
+    // and an element taken out and put back loses its pointer capture.
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', endDrag);
+    window.addEventListener('pointercancel', endDrag);
     if (!byTouch) return;
     cancelHold();
     holdTimer = setTimeout(() => {
@@ -5491,34 +5549,49 @@ function attachDrag(li, opts = {}) {
     }, TOUCH_HOLD_MS);
   });
 
-  // Once a held row has picked up, the page has to stop scrolling under it.
   function startDrag(e) {
     dragging = true;
-    li.classList.add('dragging');
     document.body.classList.add('dragging-item');
-    // Turning selection off stops a new one forming, but anything already highlighted
-    // when the row picks up would stay lit for the whole drag.
     try {
       const sel = window.getSelection();
       if (sel && !sel.isCollapsed) sel.removeAllRanges();
     } catch (err) {}
+    const r = li.getBoundingClientRect();
+    grabX = startX - r.left;
+    grabY = startY - r.top;
+    homeParent = li.parentElement;
+    homeNext = li.nextElementSibling;
     clone = li.cloneNode(true);
-    // The row it was cloned from is faded to show where it came from; the thing under
-    // the finger should be solid.
     clone.classList.remove('dragging', 'picked-up');
     clone.classList.add('drag-clone');
-    clone.style.width = li.offsetWidth + 'px';
+    clone.style.width = r.width + 'px';
+    clone.style.height = r.height + 'px';
     document.body.appendChild(clone);
+    // The row stays in the list as the slot it will drop into.
+    li.classList.add('dragging');
+    prevX = e.clientX;
+    tilt = tiltTarget = 0; lift = 0;
     placeClone(e.clientX, e.clientY);
+    if (!tiltRaf) tiltRaf = requestAnimationFrame(tiltTick);
   }
 
-  // Kept on screen: a row is nearly as wide as a phone, so centring it on the finger
-  // hangs it off the edge. Vertical tracking is what a reorder needs to be exact.
   function placeClone(x, y) {
     const w = clone.offsetWidth;
     const maxLeft = Math.max(6, window.innerWidth - w - 6);
-    clone.style.left = Math.min(Math.max(x - w / 2, 6), maxLeft) + 'px';
-    clone.style.top = (y - 20) + 'px';
+    clone.style.left = Math.min(Math.max(x - grabX, 6), maxLeft) + 'px';
+    clone.style.top = (y - grabY) + 'px';
+  }
+
+  // The held row leans a little into the way it's moving, and lifts as it's picked up.
+  function tiltTick() {
+    tiltRaf = null;
+    if (!dragging || !clone) return;
+    if (REDUCED_MOTION) { clone.style.transform = 'scale(1.02)'; return; }
+    tiltTarget *= 0.85;
+    tilt += (tiltTarget - tilt) * 0.25;
+    lift += (1 - lift) * 0.3;
+    clone.style.transform = `scale(${1 + 0.035 * lift}) rotate(${tilt.toFixed(2)}deg)`;
+    tiltRaf = requestAnimationFrame(tiltTick);
   }
 
   // What's under the pointer: a date chip, or the backlog tab (if this item can go there).
@@ -5531,39 +5604,31 @@ function attachDrag(li, opts = {}) {
     };
   }
 
-  // Where in a list this row would land. Expressed relative to a neighbour rather than as
-  // an index: what's stored is one array of both categories, and only the order within a
-  // category is ever visible, so an absolute index would mean nothing.
-  //   { category, at: 'before' | 'start' | 'end', beforeId }
-  function reorderTargetAt(x, y) {
+  // Where the slot should be for the pointer at (x, y): { ul, before } or null to stay put.
+  function slotAt(x, y) {
     if (typeof opts.onReorder !== 'function') return null;
     const el = document.elementFromPoint(x, y);
     if (!el) return null;
+    const panel = li.closest('.tab-panel');
     const zone = el.closest('[data-reorder]');
-    if (!zone) return null;
-    const category = zone.dataset.reorder;
-
+    if (!zone || !panel || zone.closest('.tab-panel') !== panel) return null;
     const row = el.closest('li.task-item');
-    if (row && row !== li && row.dataset.id) {
+    if (row === li) return null;
+    if (row && row.parentElement && row.parentElement.dataset.reorder) {
       const r = row.getBoundingClientRect();
-      if (y < r.top + r.height / 2) return { category, at: 'before', beforeId: row.dataset.id, row, edge: 'above' };
-      const next = row.nextElementSibling;
-      if (next && next.classList.contains('task-item')) {
-        return { category, at: 'before', beforeId: next.dataset.id, row, edge: 'below' };
-      }
-      return { category, at: 'end', row, edge: 'below' };
+      const before = y < r.top + r.height / 2 ? row : row.nextElementSibling;
+      return { ul: row.parentElement, before };
     }
-    if (row === li) return null;                       // over itself: nothing to show
-    // A heading sits above its list, so dropping on one means the top of that section.
-    if (zone.classList.contains('section-heading')) return { category, at: 'start', zone };
-    return { category, at: 'end', zone };
+    const ul = panel.querySelector(`ul[data-reorder="${zone.dataset.reorder}"]`);
+    if (!ul) return null;
+    // A heading sits above its list, so it means the top; anywhere else, the bottom.
+    if (zone.classList.contains('section-heading')) return { ul, before: ul.firstElementChild };
+    return { ul, before: null };
   }
 
   function clearDropHighlights() {
     document.querySelectorAll('.date-chip.drop-target, .tab.drop-target, [data-reorder].drop-target')
       .forEach(c => c.classList.remove('drop-target'));
-    document.querySelectorAll('li.task-item.drop-above, li.task-item.drop-below')
-      .forEach(c => c.classList.remove('drop-above', 'drop-below'));
   }
 
   function updateDropFeedback(x, y) {
@@ -5571,10 +5636,12 @@ function attachDrag(li, opts = {}) {
     const { chip, backlogTab } = dropTargetsAt(x, y);
     if (chip) { chip.classList.add('drop-target'); return; }
     if (backlogTab) { backlogTab.classList.add('drop-target'); return; }
-    const drop = reorderTargetAt(x, y);
-    if (!drop) return;
-    if (drop.row) drop.row.classList.add(drop.edge === 'above' ? 'drop-above' : 'drop-below');
-    else if (drop.zone) drop.zone.classList.add('drop-target');
+    const slot = slotAt(x, y);
+    if (!slot) return;
+    const before = slot.before === li ? li.nextElementSibling : slot.before;
+    if (li.parentElement === slot.ul && li.nextElementSibling === before) return;   // already there
+    // The rows around it slide apart to make room, rather than a line marking the spot.
+    flipLayout(li.closest('.tab-panel'), () => slot.ul.insertBefore(li, before));
   }
 
   function autoScrollTick() {
@@ -5586,7 +5653,6 @@ function attachDrag(li, opts = {}) {
     const step = Math.max(3, Math.round(DRAG_EDGE_SPEED * Math.min(1, over / DRAG_EDGE)));
     const was = window.scrollY;
     window.scrollBy(0, dir * step);
-    // The pointer hasn't moved but the page has, so what's underneath it has changed.
     if (window.scrollY !== was) updateDropFeedback(lastX, lastY);
     edgeRaf = requestAnimationFrame(autoScrollTick);
   }
@@ -5594,8 +5660,8 @@ function attachDrag(li, opts = {}) {
     if (edgeRaf) { cancelAnimationFrame(edgeRaf); edgeRaf = null; }
   }
 
-  li.addEventListener('pointermove', (e) => {
-    if (!down) return;
+  function onMove(e) {
+    if (!down || e.pointerId !== pointerId) return;
     if (!dragging) {
       const far = Math.abs(e.clientX - startX) > THRESHOLD || Math.abs(e.clientY - startY) > THRESHOLD;
       if (byTouch) {
@@ -5605,6 +5671,7 @@ function attachDrag(li, opts = {}) {
             cancelHold();
             holdPageStill(false);
             down = false;
+            unlisten();
           }
           return;
         }
@@ -5615,13 +5682,46 @@ function attachDrag(li, opts = {}) {
         return;
       }
     }
+    tiltTarget = Math.max(-5, Math.min(5, tiltTarget + (e.clientX - prevX) * 0.35));
+    prevX = e.clientX;
     lastX = e.clientX; lastY = e.clientY;
     placeClone(e.clientX, e.clientY);
     updateDropFeedback(e.clientX, e.clientY);
     if (!edgeRaf) edgeRaf = requestAnimationFrame(autoScrollTick);
-  });
+  }
+
+  function unlisten() {
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', endDrag);
+    window.removeEventListener('pointercancel', endDrag);
+  }
+
+  // Fly the held copy to a rect (the slot, or a date chip it's shrinking into), then go.
+  function settleClone(toRect, shrink, done) {
+    const c = clone;
+    clone = null;
+    if (!c) { done(); return; }
+    if (REDUCED_MOTION) { c.remove(); done(); return; }
+    const from = c.getBoundingClientRect();
+    const dx = shrink ? toRect.left + toRect.width / 2 - (from.left + from.width / 2) : toRect.left - from.left;
+    const dy = shrink ? toRect.top + toRect.height / 2 - (from.top + from.height / 2) : toRect.top - from.top;
+    const end = shrink
+      ? { transform: `translate(${dx}px, ${dy}px) scale(0.12)`, opacity: 0 }
+      : { transform: `translate(${dx}px, ${dy}px) scale(1) rotate(0deg)`, boxShadow: '0 0 0 rgba(0,0,0,0)' };
+    const ms = shrink ? 240 : 200;
+    const a = c.animate([{ transform: c.style.transform || 'none' }, end],
+      { duration: ms, easing: MOVE_EASE, fill: 'forwards' });
+    // Finishes on a timer too: a browser pauses animations in a tab it has put in the
+    // background, and the move itself must never wait on a frame that isn't coming.
+    let finished = false;
+    const finish = () => { if (finished) return; finished = true; c.remove(); done(); };
+    a.onfinish = finish;
+    setTimeout(finish, ms + 120);
+  }
 
   function endDrag(e) {
+    if (e.pointerId !== pointerId) return;
+    unlisten();
     const wasDown = down;
     const wasArmed = armed;
     cancelHold();
@@ -5631,30 +5731,53 @@ function attachDrag(li, opts = {}) {
     stopAutoScroll();
     li.classList.remove('picked-up');
     if (!dragging) {
-      // Pointer capture retargets the click to the li, so a plain tap is handled here.
-      // pointercancel means the browser took the gesture over to scroll the page, which
-      // is never a tap, and counting it was popping a card open on every scroll.
+      // A plain tap. pointercancel means the browser took the gesture over to scroll,
+      // which is never a tap.
       const moved = Math.abs(e.clientX - startX) > THRESHOLD || Math.abs(e.clientY - startY) > THRESHOLD;
       if (wasDown && !wasArmed && !moved && e.type === 'pointerup' && typeof opts.onTap === 'function') opts.onTap();
       return;
     }
     dragging = false;
-    li.classList.remove('dragging');
     document.body.classList.remove('dragging-item');
     try { li.releasePointerCapture(e.pointerId); } catch (err) {}
 
-    const { chip, backlogTab } = dropTargetsAt(e.clientX, e.clientY);
-    const drop = chip || backlogTab ? null : reorderTargetAt(e.clientX, e.clientY);
+    const { chip, backlogTab } = e.type === 'pointerup' ? dropTargetsAt(e.clientX, e.clientY) : {};
     clearDropHighlights();
-    if (clone) { clone.remove(); clone = null; }
+    const panel = li.closest('.tab-panel');
 
-    if (chip && typeof opts.onDay === 'function') opts.onDay(chip.dataset.date);
-    else if (backlogTab && typeof opts.onBacklog === 'function') opts.onBacklog();
-    else if (drop && typeof opts.onReorder === 'function') opts.onReorder(drop);
+    // Where the slot ended up is where it goes.
+    const ul = li.parentElement;
+    let drop = null;
+    if (ul && ul.dataset.reorder && !(ul === homeParent && li.nextElementSibling === homeNext)) {
+      let next = li.nextElementSibling;
+      while (next && !next.classList.contains('task-item')) next = next.nextElementSibling;
+      drop = next
+        ? { category: ul.dataset.reorder, at: 'before', beforeId: next.dataset.id }
+        : { category: ul.dataset.reorder, at: 'end' };
+      // Exactly what's on screen, top to bottom, is the order that's kept.
+      drop.order = [...ul.querySelectorAll(':scope > li.task-item[data-id]')].map(r => r.dataset.id);
+    }
+
+    const target = chip || backlogTab;
+    if (target) {
+      // It's leaving this list: put the slot back so the gap closes as it flies off.
+      flipLayout(panel, () => homeParent.insertBefore(li, homeNext));
+      li.classList.add('settling');
+      settleClone(target.getBoundingClientRect(), true, () => {
+        li.classList.remove('dragging', 'settling');
+        flipRender(panel, () => {
+          if (chip && typeof opts.onDay === 'function') opts.onDay(chip.dataset.date);
+          else if (backlogTab && typeof opts.onBacklog === 'function') opts.onBacklog();
+        });
+      });
+      return;
+    }
+    li.classList.add('settling');
+    settleClone(li.getBoundingClientRect(), false, () => {
+      li.classList.remove('dragging', 'settling');
+      if (drop && typeof opts.onReorder === 'function') flipRender(panel, () => opts.onReorder(drop));
+    });
   }
-
-  li.addEventListener('pointerup', endDrag);
-  li.addEventListener('pointercancel', endDrag);
 }
 
 // Order inside a list is the priority order, so dropping a row between two others is how
@@ -5684,18 +5807,34 @@ function moveWithinList(list, id, drop) {
   return true;
 }
 
+// What's shown is sorted by the planner, not by the stored array, so a position given
+// relative to a neighbour landed somewhere else. A drop hands over the list as it looks;
+// that order is stored, and every row in it counts as placed by hand from then on, so the
+// planner leaves the order you made alone.
+function applyShownOrder(list, id, drop, pin) {
+  const item = list.find(i => i.id === id);
+  if (!item) return null;
+  item.category = drop.category === 'personal' ? 'personal' : 'work';
+  if (!Array.isArray(drop.order)) return moveWithinList(list, id, drop) ? list : null;
+  const byId = new Map(list.map(i => [i.id, i]));
+  const ordered = drop.order.map(x => byId.get(x)).filter(Boolean);
+  if (pin) ordered.forEach(i => { i.handPlaced = true; });
+  const inOrder = new Set(ordered);
+  return [...ordered, ...list.filter(i => !inOrder.has(i))];
+}
+
 function reorderDayItem(id, drop) {
-  if (!moveWithinList(daysMap[currentDate] || [], id, drop)) return;
-  // Putting a row somewhere by hand outranks whatever the planner would have chosen, and
-  // keeps outranking it, or the next render would simply undo the drag.
-  const moved = (daysMap[currentDate] || []).find(i => i.id === id);
-  if (moved) moved.handPlaced = true;
+  const next = applyShownOrder(daysMap[currentDate] || [], id, drop, true);
+  if (!next) return;
+  daysMap[currentDate] = next;
   saveDays();
   renderDay();
 }
 
 function reorderBacklog(id, drop) {
-  if (!moveWithinList(backlog, id, drop)) return;
+  const next = applyShownOrder(backlog, id, drop, false);
+  if (!next) return;
+  backlog = next;
   saveBacklog();
   renderBacklog();
 }
