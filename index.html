@@ -6543,11 +6543,14 @@ function renderMetrics() {
 // done so far: a task you haven't got to yet this afternoon isn't a miss.
 function pctOf(n, d) { return d ? Math.round(n / d * 100) : null; }
 
+// Work only: the personal half is life, not something to score.
+const workOf = (d) => (daysMap[d] || []).filter(i => i.category !== 'personal');
+
 function computeStats() {
   const today = todayStr();
-  const days = Object.keys(daysMap).filter(d => d <= today && (daysMap[d] || []).length).sort();
+  const days = Object.keys(daysMap).filter(d => d <= today && workOf(d).length).sort();
   const dayPct = (d) => {
-    const items = daysMap[d] || [];
+    const items = workOf(d);
     const done = items.filter(i => i.done).length;
     // Today: only finished ones count toward it until the day is over.
     const planned = d === today ? done : items.length;
@@ -6558,7 +6561,7 @@ function computeStats() {
   // (and as planned again on the day it moved to), so missing it never just vanishes.
   // Today's unfinished ones aren't misses yet.
   const tasks = [];
-  days.forEach(d => (daysMap[d] || []).forEach(i => {
+  days.forEach(d => workOf(d).forEach(i => {
     if (d === today && !i.done) return;
     tasks.push({ i, d });
   }));
@@ -6578,25 +6581,24 @@ function computeStats() {
 
   // A perfect day: everything planned for it got done (only days that are over).
   const past = days.filter(d => d < today);
-  const perfect = pctOf(past.filter(d => (daysMap[d] || []).every(i => i.done)).length, past.length);
+  const perfect = pctOf(past.filter(d => workOf(d).every(i => i.done)).length, past.length);
 
   // Streak: days in a row, up to today, with at least one thing finished.
   let streak = 0;
   for (let d = (dayPct(today).done ? today : addDaysToStr(today, -1)); ; d = addDaysToStr(d, -1)) {
-    if ((daysMap[d] || []).some(i => i.done)) streak++; else break;
+    if (workOf(d).some(i => i.done)) streak++; else break;
   }
 
   const carried = pctOf(tasks.filter(t => t.i.movedTo).length, tasks.length);
 
   const share = (pred) => { const t = tasks.filter(pred); return { pct: pctOf(t.filter(x => x.i.done).length, t.length), n: t.length }; };
-  const byCat = [['work', share(t => t.i.category !== 'personal')], ['personal', share(t => t.i.category === 'personal')]];
   const byMood = STRESS_LEVELS.map((lvl, k) => [lvl.word, share(t => stressOf(t.d) === k)]).filter(([, v]) => v.n);
   const names = ['sundays', 'mondays', 'tuesdays', 'wednesdays', 'thursdays', 'fridays', 'saturdays'];
   const byDow = names.map((n, k) => [n, share(t => new Date(t.d + 'T00:00:00').getDay() === k)])
     .filter(([, v]) => v.n >= 3).sort((a, b) => b[1].pct - a[1].pct);
 
   const last14 = Array.from({ length: 14 }, (_, k) => addDaysToStr(today, k - 13)).map(d => ({ d, ...dayPct(d) }));
-  return { rate, done: done.length, total: tasks.length, thisWeek, lastWeek, onTime, perfect, streak, carried, byCat, byMood, byDow, last14, today };
+  return { rate, done: done.length, total: tasks.length, thisWeek, lastWeek, onTime, perfect, streak, carried, byMood, byDow, last14, today };
 }
 
 function renderStats() {
@@ -6613,7 +6615,7 @@ function renderStats() {
   const big = el('div', 'stats-big', show(st.rate));
   const say = el('div', 'stats-say');
   say.append(el('div', 'stats-say-main', 'of what you plan for a day, you finish that day'));
-  say.append(el('div', 'stats-say-sub', st.done + ' of ' + st.total + ' planned tasks'));
+  say.append(el('div', 'stats-say-sub', st.done + ' of ' + st.total + ' planned work tasks'));
   if (st.thisWeek != null) {
     const wk = el('div', 'stats-week');
     wk.append('this week ' + st.thisWeek + '%');
@@ -6650,7 +6652,7 @@ function renderStats() {
   [100, 50].forEach(v => { const g = el('div', 'stats-grid'); g.style.bottom = v + '%'; g.dataset.v = v + '%'; plot.appendChild(g); });
   st.last14.forEach(day => {
     const col = el('div', 'stats-col' + (day.d === st.today ? ' today' : ''));
-    const has = day.pct != null && (daysMap[day.d] || []).length;
+    const has = day.pct != null && workOf(day.d).length;
     const bar = el('div', has ? 'stats-bar' : 'stats-none');
     if (has) bar.style.height = Math.max(day.pct, 2) + '%';
     col.appendChild(bar);
@@ -6689,7 +6691,6 @@ function renderStats() {
     });
     box.appendChild(sec);
   };
-  meters('work and personal', st.byCat);
   meters('by how the day felt', st.byMood);
   if (st.byDow.length >= 2) {
     const [best, bv] = st.byDow[0];
