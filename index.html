@@ -804,6 +804,7 @@
   .metrics-detail .ln.is-done .tx { text-decoration: line-through; color: var(--muted); }
   .metrics-detail .ln.is-done .mk { color: var(--done); }
   .metrics-detail .ln .took { margin-left: auto; padding-left: 10px; flex-shrink: 0; font-size: 10px; color: var(--accent); white-space: nowrap; }
+  .metrics-detail .ln .took.late { color: #93352a; }
   .metrics-detail .ln.not-done .mk { color: var(--border); }
   .metrics-detail .none { font-size: 11px; color: var(--muted); text-transform: none; letter-spacing: 0.04em; }
   /* A quote isn't a task: no checkbox, nothing to complete, and the words are the
@@ -2164,7 +2165,7 @@
       <div class="summary-box"><div class="num" id="metricDays">0</div><div class="lbl">days tracked</div></div>
       <div class="summary-box"><div class="num" id="metricDone">0</div><div class="lbl">tasks done</div></div>
       <div class="summary-box"><div class="num" id="metricRate">0%</div><div class="lbl">completion</div></div>
-      <div class="summary-box"><div class="num" id="metricTook">&mdash;</div><div class="lbl">avg time to finish</div></div>
+      <div class="summary-box"><div class="num" id="metricTook">&mdash;</div><div class="lbl">done on time</div></div>
     </div>
     <div id="grownCard"></div>
     <div id="metricsList"></div>
@@ -4314,7 +4315,6 @@ function buildItemLi(item, onToggle, onRemove, onDrop) {
   topRow.appendChild(caret);
   topRow.appendChild(label);
   if (subs.length) topRow.appendChild(count);
-  if (item.deadline && !item.done) topRow.appendChild(duePill(item.deadline));
   if (Array.isArray(item.assignees) && item.assignees.length) {
     const dots = document.createElement('span');
     dots.className = 'assignee-dots';
@@ -4411,51 +4411,13 @@ function refreshSubPop() {
   if (onThisDay) body.appendChild(buildTaskNotes(item, draftText, hadFocus));
 }
 
-// ---------- who's on it, and when it's due ----------
-// The only shared planning left: put people from your group on a task, and say when it's
-// due. The due date is the task's deadline, which the planner orders the day by.
+// ---------- who's on it ----------
+// The only shared planning left: put people from your group on a task. A task is due on
+// the day it's scheduled; metrics say how late it got done against that.
 function buildAssignBox(item) {
   const box = document.createElement('div');
   box.className = 'assign-box';
   box.onclick = (e) => e.stopPropagation();
-
-  // When it's due. The planner already ranks the day by deadline, so this moves it too.
-  const dueRow = document.createElement('div');
-  dueRow.className = 'assign-row';
-  const dueLabel = document.createElement('span');
-  dueLabel.className = 'assign-label';
-  dueLabel.textContent = 'due';
-  const dues = document.createElement('div');
-  dues.className = 'chip-row';
-  const setDue = (d) => {
-    if (!d || item.deadline === d) delete item.deadline; else item.deadline = d;
-    saveDays(); renderDay(); refreshSubPop();
-  };
-  const today = todayStr();
-  const dow = new Date(today + 'T00:00:00').getDay();
-  const friday = addDaysToStr(today, ((5 - dow) + 7) % 7 || 7);
-  [['today', today], ['tomorrow', addDaysToStr(today, 1)], ['friday', friday]].forEach(([label, d]) => {
-    const b = document.createElement('button');
-    b.textContent = label;
-    if (item.deadline === d) b.classList.add('on');
-    b.onclick = () => setDue(d);
-    dues.appendChild(b);
-  });
-  const pick = document.createElement('input');
-  pick.type = 'date';
-  pick.className = 'due-pick' + (item.deadline ? ' on' : '');
-  pick.value = item.deadline || '';
-  pick.onchange = () => { if (pick.value) { item.deadline = pick.value; saveDays(); renderDay(); refreshSubPop(); } };
-  dues.appendChild(pick);
-  if (item.deadline) {
-    const clear = document.createElement('button');
-    clear.textContent = '\u00d7';
-    clear.title = 'no due date';
-    clear.onclick = () => setDue(null);
-    dues.appendChild(clear);
-  }
-  dueRow.append(dueLabel, dues);
-  box.appendChild(dueRow);
 
   const group = groupPeople();
   const whoRow = document.createElement('div');
@@ -4487,26 +4449,6 @@ function buildAssignBox(item) {
   whoRow.append(whoLabel, who);
   box.appendChild(whoRow);
   return box;
-}
-
-// "due today", "due tomorrow", "due fri", "due oct 30"; overdue says how late.
-function dueLabel(d) {
-  if (!d) return '';
-  const today = todayStr();
-  const days = Math.round((new Date(d + 'T00:00:00') - new Date(today + 'T00:00:00')) / 86400000);
-  if (days < 0) return days === -1 ? 'due yesterday' : (-days) + ' days late';
-  if (days === 0) return 'due today';
-  if (days === 1) return 'due tomorrow';
-  const dt = new Date(d + 'T00:00:00');
-  return 'due ' + (days < 7
-    ? dt.toLocaleDateString(undefined, { weekday: 'short' })
-    : dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })).toLowerCase();
-}
-function duePill(d) {
-  const el = document.createElement('span');
-  el.className = 'len-pill due' + (d < todayStr() ? ' late' : d === todayStr() ? ' soon' : '');
-  el.textContent = dueLabel(d);
-  return el;
 }
 
 function nameForUid(uid) {
@@ -4545,7 +4487,6 @@ function renderAssigned() {
     meta.className = 'assigned-meta';
     meta.textContent = 'from ' + t.ownerName + (t.with.length ? ' \u00b7 with ' + t.with.join(', ') : '') + (t.done ? ' \u00b7 done' : '');
     row.append(text, meta);
-    if (t.deadline) row.appendChild(duePill(t.deadline));
     list.appendChild(row);
   });
 }
@@ -5877,7 +5818,7 @@ function planOrder(items) {
       tasks: items.map((it) => ({
         id: it.id, text: it.text, done: it.done, category: it.category,
         kind: it.kind, estimateMin: it.estimateMin, priority: it.priority,
-        deadline: it.deadline, blockedBy: it.blockedBy, carriedDays: carriedDaysOf(it),
+        deadline: null, blockedBy: it.blockedBy, carriedDays: carriedDaysOf(it),
       })),
       signals: stressSignals(currentDate),
     });
@@ -6182,7 +6123,7 @@ function overflowToday() {
       tasks: items.map((it) => ({
         id: it.id, text: it.text, done: false, category: it.category,
         kind: it.kind, estimateMin: it.estimateMin, priority: it.priority,
-        deadline: it.deadline, blockedBy: it.blockedBy, carriedDays: carriedDaysOf(it),
+        deadline: null, blockedBy: it.blockedBy, carriedDays: carriedDaysOf(it),
       })),
       signals: stressSignals(currentDate),
     });
@@ -6384,22 +6325,24 @@ function scheduleBacklogItem(id, dateStr) {
 }
 
 // ---------- METRICS ----------
-// How long a task took: from when it was written down to when it was ticked off.
-// Only tasks added since this was tracked have both times; older ones show nothing.
-function tookMs(item) {
-  if (!item || !item.done || !item.addedAt || !item.doneAt) return null;
-  const ms = Date.parse(item.doneAt) - Date.parse(item.addedAt);
-  return Number.isFinite(ms) && ms >= 0 ? ms : null;
+// A task is due the day it was scheduled: the day it's on, or, if it rolled forward
+// unfinished, the day it was first meant for. Lateness is the days between that and the
+// day it was ticked off (or the day it sits on, for ticks from before times were kept).
+function localDay(iso) {
+  const d = new Date(iso);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
-function fmtTook(ms) {
-  const m = Math.round(ms / 60000);
-  if (m < 1) return 'under a minute';
-  if (m < 60) return m + 'm';
-  const h = ms / 3600000;
-  if (h < 24) return (h < 10 ? Math.round(h * 10) / 10 : Math.round(h)) + 'h';
-  const d = Math.round(h / 24);
-  return d + (d === 1 ? ' day' : ' days');
+function daysLate(item, dateStr) {
+  if (!item || !item.done) return null;
+  const due = item.since || dateStr;
+  const done = item.doneAt ? localDay(item.doneAt) : dateStr;
+  return Math.round((new Date(done + 'T00:00:00') - new Date(due + 'T00:00:00')) / 86400000);
 }
+function lateLabel(n) {
+  if (n <= 0) return n < 0 ? 'early' : 'on time';
+  return n === 1 ? '1 day late' : n + ' days late';
+}
+
 let metricsOpen = new Set();
 let grownOpen = false;
 
@@ -6462,7 +6405,7 @@ function renderGrown() {
   host.appendChild(card);
 }
 
-function buildMetricsDetail(items) {
+function buildMetricsDetail(items, dateStr) {
   const wrap = document.createElement('div');
   wrap.className = 'metrics-detail';
 
@@ -6488,12 +6431,12 @@ function buildMetricsDetail(items) {
       tx.textContent = item.text;
       ln.appendChild(mk);
       ln.appendChild(tx);
-      const took = tookMs(item);
-      if (took != null) {
+      const late = daysLate(item, dateStr);
+      if (late != null) {
         const t = document.createElement('span');
-        t.className = 'took';
-        t.textContent = 'took ' + fmtTook(took);
-        t.title = 'from when you added it to when you ticked it off';
+        t.className = 'took' + (late > 0 ? ' late' : '');
+        t.textContent = lateLabel(late);
+        t.title = 'against the day it was scheduled for';
         ln.appendChild(t);
       }
       wrap.appendChild(ln);
@@ -6548,7 +6491,7 @@ function renderMetrics() {
     bar.innerHTML = `<div class="mini-bar-fill" style="width:${pct}%"></div>`;
     card.appendChild(bar);
 
-    if (isOpen) card.appendChild(buildMetricsDetail(items));
+    if (isOpen) card.appendChild(buildMetricsDetail(items, dateStr));
 
     card.onclick = () => {
       if (metricsOpen.has(dateStr)) metricsOpen.delete(dateStr);
@@ -6562,9 +6505,9 @@ function renderMetrics() {
   document.getElementById('metricDays').textContent = dates.length;
   document.getElementById('metricDone').textContent = totalDone;
   document.getElementById('metricRate').textContent = totalItems ? Math.round((totalDone / totalItems) * 100) + '%' : '0%';
-  const tooks = dates.flatMap(d => daysMap[d]).map(tookMs).filter(v => v != null);
-  document.getElementById('metricTook').textContent = tooks.length
-    ? fmtTook(tooks.reduce((a, b) => a + b, 0) / tooks.length) : '\u2014';
+  const lates = dates.flatMap(d => daysMap[d].map(i => daysLate(i, d))).filter(v => v != null);
+  document.getElementById('metricTook').textContent = lates.length
+    ? Math.round(lates.filter(n => n <= 0).length / lates.length * 100) + '%' : '\u2014';
 }
 
 const MOODBOARD_KEY = 'moodboardPhotos';
