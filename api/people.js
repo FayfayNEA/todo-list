@@ -7,6 +7,7 @@ import {
 // GET  /api/people[?today=]            -> your profile, requests, followers, following (with today's mood)
 // GET  /api/people?q=name              -> people whose name matches
 // GET  /api/people?group=1&date=       -> the work day of everyone you follow who shows it
+// GET  /api/people?assigned=1&date=    -> tasks people in your group put your name on, for that day
 // GET  /api/people?stickers=<uid>      -> someone's sticker board, if they show it to you
 // GET  /api/people?look=<uid>          -> their colours, title and background (yours with your own id)
 // PUT  /api/people { name?, showDay?, showStickers?, stickers?, pins?, photo?, theme? }
@@ -94,6 +95,27 @@ export default async function handler(req, res) {
           };
         }));
         res.status(200).json({ date, group });
+        return;
+      }
+
+      if (q.assigned) {
+        // Only people you're connected with can put you on a task, and only the task
+        // itself travels: its words, how long it should take, and whether it's done.
+        const date = String(q.date || '').slice(0, 10);
+        const out = [];
+        for (const uid of groupOf(follows, me)) {
+          const st = await getState(uid);
+          const day = (st && st.days && st.days[date]) || [];
+          for (const t of day) {
+            if (!t || t.movedTo || !Array.isArray(t.assignees) || !t.assignees.includes(me)) continue;
+            out.push({
+              owner: uid, ownerName: nameOf(profiles, uid), id: t.id, text: String(t.text || ''),
+              done: !!t.done, estimateMin: Number.isFinite(t.estimateMin) ? t.estimateMin : null,
+              with: t.assignees.filter((u) => u !== me).map((u) => nameOf(profiles, u)),
+            });
+          }
+        }
+        res.status(200).json({ date, assigned: out });
         return;
       }
 
