@@ -65,6 +65,7 @@ export default async function handler(req, res) {
             text: String(entry.text).slice(0, 500),
             done: false,
             category: entry.category === 'personal' ? 'personal' : 'work',
+            addedAt: entry.at || new Date().toISOString(),
           });
         }
         await putState(uid, state);

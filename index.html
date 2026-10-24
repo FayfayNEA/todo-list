@@ -803,6 +803,7 @@
   .metrics-detail .ln .mk { flex-shrink: 0; width: 13px; }
   .metrics-detail .ln.is-done .tx { text-decoration: line-through; color: var(--muted); }
   .metrics-detail .ln.is-done .mk { color: var(--done); }
+  .metrics-detail .ln .took { margin-left: auto; padding-left: 10px; flex-shrink: 0; font-size: 10px; color: var(--accent); white-space: nowrap; }
   .metrics-detail .ln.not-done .mk { color: var(--border); }
   .metrics-detail .none { font-size: 11px; color: var(--muted); text-transform: none; letter-spacing: 0.04em; }
   /* A quote isn't a task: no checkbox, nothing to complete, and the words are the
@@ -2156,6 +2157,7 @@
       <div class="summary-box"><div class="num" id="metricDays">0</div><div class="lbl">days tracked</div></div>
       <div class="summary-box"><div class="num" id="metricDone">0</div><div class="lbl">tasks done</div></div>
       <div class="summary-box"><div class="num" id="metricRate">0%</div><div class="lbl">completion</div></div>
+      <div class="summary-box"><div class="num" id="metricTook">&mdash;</div><div class="lbl">avg time to finish</div></div>
     </div>
     <div id="grownCard"></div>
     <div id="metricsList"></div>
@@ -3864,7 +3866,10 @@ function fmtDate(dateStr) {
   return d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }).toLowerCase();
 }
 function ensureDay(dateStr) { if (!daysMap[dateStr]) daysMap[dateStr] = []; }
-function mk(text, category) { return { id: crypto.randomUUID(), text, done: false, category: category || 'work' }; }
+// addedAt and doneAt are what metrics measures how long a task took by.
+function mk(text, category) {
+  return { id: crypto.randomUUID(), text, done: false, category: category || 'work', addedAt: new Date().toISOString() };
+}
 
 // ---------- SAVE ----------
 let saveState = 'saved';
@@ -5699,6 +5704,7 @@ function toggleDayItem(id) {
   const item = daysMap[currentDate].find(i => i.id === id);
   if (!item) return;
   item.done = !item.done;
+  if (item.done) item.doneAt = new Date().toISOString(); else delete item.doneAt;
   saveDays();
 
   if (item.done) {
@@ -6340,7 +6346,8 @@ function scheduleBacklogItem(id, dateStr) {
   const item = backlog.find(i => i.id === id);
   if (!item) return;
   ensureDay(dateStr);
-  daysMap[dateStr].push(mk(item.text, item.category));
+  // It's the same piece of work, so it keeps the time it was first written down.
+  daysMap[dateStr].push({ ...mk(item.text, item.category), addedAt: item.addedAt || new Date().toISOString() });
   backlog = backlog.filter(i => i.id !== id);
   saveDays();
   saveBacklog();
@@ -6349,6 +6356,22 @@ function scheduleBacklogItem(id, dateStr) {
 }
 
 // ---------- METRICS ----------
+// How long a task took: from when it was written down to when it was ticked off.
+// Only tasks added since this was tracked have both times; older ones show nothing.
+function tookMs(item) {
+  if (!item || !item.done || !item.addedAt || !item.doneAt) return null;
+  const ms = Date.parse(item.doneAt) - Date.parse(item.addedAt);
+  return Number.isFinite(ms) && ms >= 0 ? ms : null;
+}
+function fmtTook(ms) {
+  const m = Math.round(ms / 60000);
+  if (m < 1) return 'under a minute';
+  if (m < 60) return m + 'm';
+  const h = ms / 3600000;
+  if (h < 24) return (h < 10 ? Math.round(h * 10) / 10 : Math.round(h)) + 'h';
+  const d = Math.round(h / 24);
+  return d + (d === 1 ? ' day' : ' days');
+}
 let metricsOpen = new Set();
 let grownOpen = false;
 
@@ -6437,6 +6460,14 @@ function buildMetricsDetail(items) {
       tx.textContent = item.text;
       ln.appendChild(mk);
       ln.appendChild(tx);
+      const took = tookMs(item);
+      if (took != null) {
+        const t = document.createElement('span');
+        t.className = 'took';
+        t.textContent = 'took ' + fmtTook(took);
+        t.title = 'from when you added it to when you ticked it off';
+        ln.appendChild(t);
+      }
       wrap.appendChild(ln);
     });
   });
@@ -6503,6 +6534,9 @@ function renderMetrics() {
   document.getElementById('metricDays').textContent = dates.length;
   document.getElementById('metricDone').textContent = totalDone;
   document.getElementById('metricRate').textContent = totalItems ? Math.round((totalDone / totalItems) * 100) + '%' : '0%';
+  const tooks = dates.flatMap(d => daysMap[d]).map(tookMs).filter(v => v != null);
+  document.getElementById('metricTook').textContent = tooks.length
+    ? fmtTook(tooks.reduce((a, b) => a + b, 0) / tooks.length) : '\u2014';
 }
 
 const MOODBOARD_KEY = 'moodboardPhotos';
