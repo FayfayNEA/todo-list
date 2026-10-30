@@ -2,6 +2,7 @@ import {
   authorize, accountFor, getState, putState, getInbox, putInbox, newId, readBody,
   mayOpen, workOnly, followerMaySee,
 } from './_lib.js';
+import { notionReady, syncMarked } from './_notion.js';
 
 // GET  /api/sync[?uid=]  -> drains the agent inbox into the day map, returns the whole state
 // PUT  /api/sync[?uid=]  -> replaces stored state with the posted { days, backlog, ideas, quotes, manifesto, checkins }
@@ -114,7 +115,19 @@ export default async function handler(req, res) {
       const manifesto = Array.isArray(body && body.manifesto) ? body.manifesto : storedManifesto(stored);
       const checkins = isMap(body && body.checkins) ? body.checkins : storedCheckins(stored);
       await putState(uid, { days, backlog, ideas, quotes, manifesto, checkins });
-      res.status(200).json({ ok: true });
+      // Starred work tasks go on to Notion. The save has already happened by this point
+      // and nothing here is allowed to undo it: a Notion outage shows up as a line in
+      // the response, never as a list that failed to save.
+      let notion;
+      if (notionReady()) {
+        try {
+          notion = await syncMarked(uid, { days, backlog });
+        } catch (e) {
+          console.error('notion sync', e);
+          notion = { configured: true, failed: 1, errors: [String(e.message || e)] };
+        }
+      }
+      res.status(200).json(notion ? { ok: true, notion } : { ok: true });
       return;
     }
 

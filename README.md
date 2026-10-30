@@ -49,13 +49,84 @@ a message didn't go out, and the invitation still exists to copy by hand.
 The original shared `INVITE_CODE` keeps working alongside personal codes, so anything
 already handed out is unaffected.
 
+## Feeding Notion
+
+The Design To-Do page in Notion is what other people read to see what design is working
+on. Keeping it current by hand means maintaining the same list twice, so the checklist
+writes into it instead: **put a star at the end of a work task and it becomes a row in
+the Backlog database.**
+
+```
+Website handoff *          -> a row in Notion, dated to the day it sits on
+check in with website      -> stays here
+order mascaura *           -> stays here; personal never leaves this app
+```
+
+The star is what makes it deliberate. A day here is mostly small chatter, and sending all
+of it would bury the real priorities in a page other people read.
+
+What crosses over, and when:
+
+| in the checklist | in Notion |
+|---|---|
+| a starred task appears | a row is created — or the row of the same name is adopted, so nothing is duplicated |
+| you tick it off | `Status` becomes **Done** |
+| you untick it | back to **In progress** |
+| you drag it to another day | `Date` and `Week` follow it |
+| you take the star off | it stops syncing; the row stays as it is |
+| you delete the task | the row stays as it is |
+
+It is one direction only, and it never deletes. Notion is not read back into the
+checklist: `Status` is written only when this app actually knows it (ticked, or a brand
+new row), so **In progress** and **Blocked** set by hand in Notion survive. Rows nobody
+starred are left alone entirely.
+
+Syncing happens inside the save, within a second or so of you typing the star. A task
+whose text, day and tick state have not changed costs nothing — no Notion call is made at
+all — and if Notion is down the save still succeeds and says so in its response.
+
+### Turning it on
+
+Two environment variables, both required; without them the whole thing is a no-op and the
+app behaves exactly as it did before.
+
+| Variable | What it does |
+|---|---|
+| `NOTION_TOKEN` | An internal integration token from [notion.so/my-integrations](https://www.notion.so/my-integrations). It needs **Insert content** and **Update content** on top of read. |
+| `NOTION_BACKLOG_DB` | The Backlog database's id — `f0cb3a6bf2a047e8b284aff447b93ed3` for the current Design To-Do page. |
+
+Make the integration, then open the Design To-Do page in Notion, and under **⋯ →
+Connections** add it. A token that has not been given the page sees nothing, which looks
+exactly like a wrong database id.
+
+```bash
+echo "ntn_..." | vercel env add NOTION_TOKEN production
+echo "f0cb3a6bf2a047e8b284aff447b93ed3" | vercel env add NOTION_BACKLOG_DB production
+vercel --prod
+```
+
+Then check the stars are where you think they are, and push the first batch:
+
+```bash
+curl -s https://checklist-tracker-pi.vercel.app/api/notion-sync \
+  -H "Authorization: Bearer $TRACKER_TOKEN"            # what is starred, no Notion calls
+
+curl -s -X POST https://checklist-tracker-pi.vercel.app/api/notion-sync \
+  -H "Authorization: Bearer $TRACKER_TOKEN"            # push all of it, changed or not
+```
+
+`GET` answers before a token is ever set, so it is also the way to check the stars on
+their own. `POST` is the one to reach for after Notion has been down.
+
 ## How the data is laid out
 
 ```
 state.json                 the owner's list  (predates accounts; left exactly where it was)
 inbox.json                 the owner's queue of agent-posted tasks
+notion-map.json            which Notion row each starred task became
 u/<id>/state.json          one list per account
 u/<id>/inbox.json          one queue per account
+u/<id>/notion-map.json     one row map per account
 users/<sha256(email)>.json { id, email, salt, scrypt hash }
 invites/index.json         every invitation and whether it's been used
 ```
@@ -95,3 +166,7 @@ vercel dev            # needs the env vars above, and writes to the real blob st
 ```
 
 `api/` is Node serverless functions; `index.html` is the whole client.
+
+```bash
+npm test              # the Notion sync, against a stubbed Notion and the in-memory blob
+```

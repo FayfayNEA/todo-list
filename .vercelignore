@@ -5,3 +5,5 @@
 .DS_Store
 # The local practice copy with pretend accounts; never part of the live site.
 dev
+# Tests run locally; nothing to serve.
+test

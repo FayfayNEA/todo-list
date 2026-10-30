@@ -276,7 +276,7 @@ const app = async (req, res) => {
     </script>`);
     return;
   }
-  const m = /^\/api\/(\w+)$/.exec(u.pathname);
+  const m = /^\/api\/([\w-]+)$/.exec(u.pathname);
   if (m) {
     const handler = routes[m[1]];
     if (!handler) { res.statusCode = 404; res.end(); return; }

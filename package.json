@@ -14,6 +14,7 @@
     "qrcode": "^1.5.4"
   },
   "scripts": {
-    "dev:local": "node --import ./dev/register.mjs dev/server.mjs"
+    "dev:local": "node --import ./dev/register.mjs dev/server.mjs",
+    "test": "node --import ./dev/register.mjs test/notion-sync.test.mjs && node --import ./dev/register.mjs test/notion-endpoints.test.mjs"
   }
 }

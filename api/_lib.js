@@ -10,6 +10,10 @@ export const OWNER_UID = 'owner';
 
 const statePath = (uid) => (uid === OWNER_UID ? 'state.json' : `u/${uid}/state.json`);
 const inboxPath = (uid) => (uid === OWNER_UID ? 'inbox.json' : `u/${uid}/inbox.json`);
+// Which Notion row each starred task became. Kept out of state.json on purpose: the
+// client replaces that wholesale on every save, and a stale tab would drop the links
+// and leave the next sync making duplicate rows.
+const notionMapPath = (uid) => (uid === OWNER_UID ? 'notion-map.json' : `u/${uid}/notion-map.json`);
 
 const AUTH_SECRET = (process.env.AUTH_SECRET || '').trim();
 const INVITE_CODE = (process.env.INVITE_CODE || '').trim();
@@ -63,6 +67,8 @@ export const getState = (uid) => readJson(statePath(uid), { days: {}, backlog: [
 export const putState = (uid, v) => writeJson(statePath(uid), v);
 export const getInbox = (uid) => readJson(inboxPath(uid), []);
 export const putInbox = (uid, v) => writeJson(inboxPath(uid), v);
+export const getNotionMap = (uid) => readJson(notionMapPath(uid), { tasks: {} });
+export const putNotionMap = (uid, v) => writeJson(notionMapPath(uid), v);
 
 // ---------- passwords ----------
 // scrypt with these parameters takes ~100ms, which is the point: it's the only thing
