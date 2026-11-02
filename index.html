@@ -4677,7 +4677,6 @@ function renderIdeas() {
     const label = document.createElement('span');
     label.className = 'label';
     label.textContent = idea.text;
-    label.onclick = (e) => { e.stopPropagation(); openIdeaPop(idea.id); };
 
     const remove = document.createElement('button');
     remove.className = 'remove';
@@ -4696,7 +4695,10 @@ function renderIdeas() {
     }
     topRow.appendChild(remove);
     li.appendChild(topRow);
-    attachDrag(li, { lists: ['ideas'], onReorder: (drop) => reorderGrowth('ideas', drop) });
+    // The row is draggable, which captures the pointer, so a plain tap arrives here
+    // rather than as a click on the words.
+    attachDrag(li, { lists: ['ideas'], onTap: () => openIdeaPop(idea.id),
+      onReorder: (drop) => reorderGrowth('ideas', drop) });
     listEl.appendChild(li);
   });
 }
