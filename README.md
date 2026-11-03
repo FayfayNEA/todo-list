@@ -91,7 +91,7 @@ team's board, where work lands that nobody typed into this app. So the traffic r
 ways now:
 
 ```
-Product, Design & Dev Priorities      the team's board; this app never writes to it
+Product, Design & Dev Priorities      the team's board; only dates are written back
         |  rows owned by you, still open
         v
 Design To-Do -> Backlog               the page other people read
@@ -100,10 +100,15 @@ Design To-Do -> Backlog               the page other people read
      Checklist ---------------------------------+
 ```
 
-Priorities is read-only from here, and deliberately so: it is shared with everyone, and a
-checklist tidy-up should not move somebody else's card. Only rows whose **Owner** is you
-are read at all — the board carries far more of other people's work than your own, and
-all of it would otherwise land in your day.
+Priorities is almost read-only from here. It is shared with everyone, so a checklist
+tidy-up has no business changing what the team sees — with one exception: **move a task
+to another day and the date moves on the board too**, because a date nobody updated is
+worse than no date at all. Nothing else is written. Status, Horizon, Owner and the rest
+stay the team's to set, and only a row you own is ever touched, so a title that happens
+to collide with somebody else's card cannot drag it around.
+
+Only rows whose **Owner** is you are read, too — the board carries far more of other
+people's work than your own, and all of it would otherwise land in your day.
 
 | in Notion | in the checklist |
 |---|---|
@@ -112,6 +117,14 @@ all of it would otherwise land in your day.
 | that date has already gone | it lands on today rather than in the past |
 | you delete the task here | it stays deleted; a row is only ever pulled once |
 | a row is Done | it is not pulled at all |
+
+And back the other way:
+
+| in the checklist | on the board |
+|---|---|
+| you drag a starred task to another day | `Date` and `Week` follow it on the Priorities row you own |
+| you save without moving it | nothing is written there at all |
+| you tick it off | the Backlog says Done; Priorities is left alone |
 
 The pull runs inside `GET /api/sync`, so a new priority shows up when you open the app or
 come back to the tab — at most once every five minutes, because that endpoint fires on

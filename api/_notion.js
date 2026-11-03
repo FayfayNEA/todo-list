@@ -137,6 +137,15 @@ export async function syncMarked(uid, state, { force = false } = {}) {
         page = made.id;
         result.created++;
       }
+      // Only when the day actually moved. Every save would otherwise write to a board
+      // other people are reading, to say nothing it did not already say.
+      if (known && known.date && task.date && known.date !== task.date) {
+        try {
+          if (await pushDateToPriorities(task.text, task.date)) result.moved = (result.moved || 0) + 1;
+        } catch (e) {
+          console.error("notion date push", task.text, e.message);
+        }
+      }
       seen[task.id] = { page, hash, text: task.text, date: task.date, done: task.done };
       dirty = true;
     } catch (e) {
@@ -296,4 +305,36 @@ export async function pullFromNotion(uid, state, { force = false } = {}) {
   map.pulledAt = now;
   await putNotionMap(uid, map);
   return result;
+}
+
+// Moving a task to another day moves the date on the team's board as well. This is the
+// one thing that writes to Priorities, and it stays one thing on purpose: a date is the
+// fact other people actually need, and everything else there is theirs to set. Only a
+// row owned by this person is ever touched, so a title that happens to collide with
+// somebody else's card cannot drag it around.
+async function findPriorityByTitle(text) {
+  const r = await notion('/databases/' + PRIORITIES_DB + '/query', {
+    method: 'POST',
+    body: JSON.stringify({
+      filter: {
+        and: [
+          { property: 'Name', title: { equals: text } },
+          { property: 'Owner', people: { contains: OWNER_ID } },
+        ],
+      },
+      page_size: 1,
+    }),
+  });
+  return (r && r.results && r.results[0] && r.results[0].id) || null;
+}
+
+export async function pushDateToPriorities(text, date) {
+  if (!prioritiesReady() || !date) return false;
+  const page = await findPriorityByTitle(text);
+  if (!page) return false;
+  const properties = { Date: { date: { start: date } } };
+  const week = weekLabel(date);
+  if (week) properties.Week = { select: { name: week } };
+  await notion('/pages/' + page, { method: 'PATCH', body: JSON.stringify({ properties }) });
+  return true;
 }
