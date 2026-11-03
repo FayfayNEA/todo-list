@@ -581,6 +581,14 @@
     to { opacity: 1; transform: scale(1); }
   }
   li.task-item.leaving { opacity: 0; transform: translateX(24px); }
+  li.moved-row {
+    display: flex; align-items: center; gap: 10px; padding: 10px 15px; margin-bottom: 8px;
+    border: 1px dashed var(--border-light); border-radius: 8px; cursor: pointer;
+    font-size: 13px; color: var(--muted); opacity: 0.75;
+  }
+  li.moved-row .label { flex: 1; min-width: 0; text-decoration: line-through; text-decoration-color: var(--border); }
+  li.moved-row .moved-to { flex-shrink: 0; font-size: 10px; color: var(--accent); }
+  li.moved-row:hover { opacity: 1; }
   /* The row being dragged stays in the list as the empty slot it will drop into. */
   li.task-item.dragging {
     background: transparent; box-shadow: none;
@@ -6241,6 +6249,28 @@ function renderDay() {
     undone.forEach(item => {
       activeList.appendChild(buildItemLi(item, () => toggleDayItem(item.id), () => removeDayItem(item.id), (d) => { if (d !== currentDate) moveDayItem(item.id, d); }));
     });
+
+    // What rolled forward off this day still shows here, faded, with where it went,
+    // so an old day never looks like things were deleted from it. Tapping it goes there.
+    const movedAway = (daysMap[currentDate] || []).filter(i => i.movedTo &&
+      (category === 'work' ? i.category !== 'personal' : i.category === 'personal'));
+    movedAway.forEach(item => {
+      const li = document.createElement('li');
+      li.className = 'moved-row';
+      const label = document.createElement('span');
+      label.className = 'label';
+      label.textContent = item.text;
+      const to = document.createElement('span');
+      to.className = 'moved-to';
+      const target = item.movedTo === todayStr() ? 'today'
+        : new Date(item.movedTo + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short' }).toLowerCase();
+      to.textContent = '\u2192 moved to ' + target;
+      li.append(label, to);
+      li.title = 'not finished here, so it rolled forward';
+      li.onclick = () => selectDay(item.movedTo);
+      activeList.appendChild(li);
+    });
+    if (movedAway.length && !undone.length) emptyEl.style.display = 'none';
 
     if (done.length > 0) {
       toggleEl.style.display = 'block';
