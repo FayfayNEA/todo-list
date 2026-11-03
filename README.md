@@ -76,32 +76,74 @@ What crosses over, and when:
 | you take the star off | it stops syncing; the row stays as it is |
 | you delete the task | the row stays as it is |
 
-It is one direction only, and it never deletes. Notion is not read back into the
-checklist: `Status` is written only when this app actually knows it (ticked, or a brand
-new row), so **In progress** and **Blocked** set by hand in Notion survive. Rows nobody
-starred are left alone entirely.
+It never deletes. `Status` is written only when this app actually knows it (ticked, or a
+brand new row), so **In progress** and **Blocked** set by hand in Notion survive. Rows
+nobody starred are left alone entirely.
 
 Syncing happens inside the save, within a second or so of you typing the star. A task
 whose text, day and tick state have not changed costs nothing — no Notion call is made at
 all — and if Notion is down the save still succeeds and says so in its response.
 
+## Reading Notion back
+
+The Design To-Do page is not the only list. **Product, Design & Dev Priorities** is the
+team's board, where work lands that nobody typed into this app. So the traffic runs both
+ways now:
+
+```
+Product, Design & Dev Priorities      the team's board; this app never writes to it
+        |  rows owned by you, still open
+        v
+Design To-Do -> Backlog               the page other people read
+        |  open rows                            ^
+        v                                       |  starred tasks
+     Checklist ---------------------------------+
+```
+
+Priorities is read-only from here, and deliberately so: it is shared with everyone, and a
+checklist tidy-up should not move somebody else's card. Only rows whose **Owner** is you
+are read at all — the board carries far more of other people's work than your own, and
+all of it would otherwise land in your day.
+
+| in Notion | in the checklist |
+|---|---|
+| a priority of yours appears | a Backlog row of the same name is made, or the one already there adopted |
+| a Backlog row is open | it becomes a task, starred, on its due date |
+| that date has already gone | it lands on today rather than in the past |
+| you delete the task here | it stays deleted; a row is only ever pulled once |
+| a row is Done | it is not pulled at all |
+
+The pull runs inside `GET /api/sync`, so a new priority shows up when you open the app or
+come back to the tab — at most once every five minutes, because that endpoint fires on
+every focus and nobody wants their checklist to feel like Notion. Tasks arrive through
+the same queue `POST /api/day` uses, so there is one path into a day and one place it can
+go wrong. If Notion is down the load still succeeds and says so.
+
 ### Turning it on
 
-Two environment variables, both required; without them the whole thing is a no-op and the
-app behaves exactly as it did before.
+`NOTION_TOKEN` and `NOTION_BACKLOG_DB` are what the whole thing needs; without them it is a
+no-op and the app behaves exactly as it did before. The other two add the Priorities
+board on top — leave them out and the checklist and Design To-Do still keep each other
+company.
 
 | Variable | What it does |
 |---|---|
 | `NOTION_TOKEN` | An internal integration token from [notion.so/my-integrations](https://www.notion.so/my-integrations). It needs **Insert content** and **Update content** on top of read. |
 | `NOTION_BACKLOG_DB` | The Backlog database's id — `f0cb3a6bf2a047e8b284aff447b93ed3` for the current Design To-Do page. |
+| `NOTION_PRIORITIES_DB` | Optional. The Product, Design & Dev Priorities database — `4020ded6cc0380bea835d410e24a9d46`. Needs `NOTION_OWNER_ID` as well; on its own it does nothing. |
+| `NOTION_OWNER_ID` | Optional. Your Notion user id, which is whose rows get read off that board. Nobody else's are touched. |
 
 Make the integration, then open the Design To-Do page in Notion, and under **⋯ →
 Connections** add it. A token that has not been given the page sees nothing, which looks
-exactly like a wrong database id.
+exactly like a wrong database id. The Priorities board needs the same treatment if you
+want it read — and that one is shared with the team, so adding a connection there is a
+decision about their board, not just yours.
 
 ```bash
 echo "ntn_..." | vercel env add NOTION_TOKEN production
 echo "f0cb3a6bf2a047e8b284aff447b93ed3" | vercel env add NOTION_BACKLOG_DB production
+echo "4020ded6cc0380bea835d410e24a9d46" | vercel env add NOTION_PRIORITIES_DB production
+echo "your-notion-user-id" | vercel env add NOTION_OWNER_ID production
 vercel --prod
 ```
 

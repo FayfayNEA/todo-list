@@ -2,7 +2,7 @@ import {
   authorize, accountFor, getState, putState, getInbox, putInbox, newId, readBody,
   mayOpen, workOnly, followerMaySee,
 } from './_lib.js';
-import { notionReady, syncMarked } from './_notion.js';
+import { notionReady, syncMarked, pullFromNotion } from './_notion.js';
 
 // GET  /api/sync[?uid=]  -> drains the agent inbox into the day map, returns the whole state
 // PUT  /api/sync[?uid=]  -> replaces stored state with the posted { days, backlog, ideas, quotes, manifesto, checkins }
@@ -53,6 +53,24 @@ export default async function handler(req, res) {
   try {
     if (req.method === 'GET') {
       const state = await getState(uid);
+
+      // Notion fills this list as well as reading from it: priorities the team put on
+      // the board become Backlog rows, and open Backlog rows become tasks here. It goes
+      // through the same queue the agent API uses, so there is one path into a day. A
+      // guest is looking at somebody else's board and never sets any of it going.
+      let pulled;
+      if (!guest && notionReady()) {
+        try {
+          pulled = await pullFromNotion(uid, state);
+          if (pulled.items && pulled.items.length) {
+            await putInbox(uid, (await getInbox(uid)).concat(pulled.items));
+          }
+        } catch (e) {
+          console.error('notion pull', e);
+          pulled = { configured: true, failed: 1, errors: [String((e && e.message) || e)] };
+        }
+      }
+
       const inbox = await getInbox(uid);
 
       if (Array.isArray(inbox) && inbox.length) {
@@ -86,6 +104,8 @@ export default async function handler(req, res) {
         quotes: storedQuotes(state),
         manifesto: storedManifesto(state),
         checkins: storedCheckins(state),
+        // Only worth saying when it actually did something; a skipped pull is noise.
+        ...(pulled && !pulled.skipped && pulled.configured ? { notion: pulled } : {}),
         // Who this token belongs to: the app shows it, and uses it to tell whose
         // board it is looking at.
         account: accountFor(auth),

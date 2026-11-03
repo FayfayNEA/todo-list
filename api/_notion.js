@@ -149,3 +149,151 @@ export async function syncMarked(uid, state, { force = false } = {}) {
   if (dirty) await putNotionMap(uid, map);
   return result;
 }
+
+// ---------- the other direction ----------
+// Priorities is the team's board, and this app never writes to it. Rows there that
+// belong to one person are copied into the Backlog, and the Backlog is what reaches the
+// checklist — so the Design To-Do page stays the single thing other people read, and
+// nothing the checklist does can disturb the team's board.
+//
+// A row that has been pulled once is never pulled again. Without that, deleting a task
+// in the checklist would bring it straight back on the next load, which is maddening
+// and looks exactly like a bug.
+
+const PRIORITIES_DB = (process.env.NOTION_PRIORITIES_DB || '').trim();
+const OWNER_ID = (process.env.NOTION_OWNER_ID || '').trim();
+// GET /api/sync runs on every load and every tab focus. Reading Notion that often would
+// make the app feel like Notion; once every few minutes is enough to feel immediate.
+const PULL_EVERY_MS = 5 * 60 * 1000;
+
+export const prioritiesReady = () => notionReady() && !!PRIORITIES_DB && !!OWNER_ID;
+
+const titleOf = (page, prop) => {
+  const cell = page && page.properties && page.properties[prop];
+  return ((cell && cell.title) || []).map((r) => r.plain_text || '').join('').trim();
+};
+// Backlog's Status is a select and Priorities' is a status property. They read the same.
+const optionName = (page, prop) => {
+  const cell = page && page.properties && page.properties[prop];
+  const v = cell && (cell.select || cell.status);
+  return (v && v.name) || null;
+};
+const dateStart = (page, prop) => {
+  const cell = page && page.properties && page.properties[prop];
+  return cell && cell.date && cell.date.start ? String(cell.date.start).slice(0, 10) : null;
+};
+
+async function queryAll(db, filter) {
+  const out = [];
+  let cursor = null;
+  do {
+    const body = { page_size: 100 };
+    if (filter) body.filter = filter;
+    if (cursor) body.start_cursor = cursor;
+    const r = await notion('/databases/' + db + '/query', { method: 'POST', body: JSON.stringify(body) });
+    out.push(...((r && r.results) || []));
+    cursor = r && r.has_more ? r.next_cursor : null;
+  } while (cursor && out.length < 500);
+  return out;
+}
+
+// Open rows on the team board that are this person's to do. Someone else's work is not
+// their daily list, so Owner is the filter and it is never widened.
+export async function openPriorities() {
+  const rows = await queryAll(PRIORITIES_DB, {
+    and: [
+      { property: 'Owner', people: { contains: OWNER_ID } },
+      { property: 'Status', status: { does_not_equal: 'Done' } },
+    ],
+  });
+  return rows
+    .map((p) => ({ id: p.id, text: titleOf(p, 'Name'), date: dateStart(p, 'Date'), status: optionName(p, 'Status') }))
+    .filter((r) => r.text);
+}
+
+// Open rows in the Backlog — the list the checklist actually fills itself from.
+export async function openBacklog() {
+  const rows = await queryAll(DB, { property: 'Status', select: { does_not_equal: 'Done' } });
+  return rows
+    .map((p) => ({ id: p.id, text: titleOf(p, 'Task'), date: dateStart(p, 'Due date') || dateStart(p, 'Date') }))
+    .filter((r) => r.text);
+}
+
+// A priority becomes a Backlog row of the same name, or adopts the one already sitting
+// there, so running this twice does not leave the page full of pairs.
+async function ensureBacklogRow(row) {
+  const existing = await findByTitle(row.text);
+  if (existing) return { page: existing, created: false };
+  const properties = propertiesFor({ text: row.text, date: row.date, done: false, creating: true });
+  if (row.status === 'In progress') properties.Status = { select: { name: 'In progress' } };
+  const made = await notion('/pages', {
+    method: 'POST',
+    body: JSON.stringify({ parent: { database_id: DB }, properties }),
+  });
+  return { page: made.id, created: true };
+}
+
+const todayStr = () => new Date().toISOString().slice(0, 10);
+
+// Everything the checklist already says, star or no star, so nothing arrives twice.
+function checklistTitles(state) {
+  const seen = new Set();
+  const add = (text) => {
+    const key = bareText(text || '').toLowerCase();
+    if (key) seen.add(key);
+  };
+  for (const items of Object.values((state && state.days) || {})) for (const t of items || []) add(t && t.text);
+  for (const t of (state && state.backlog) || []) add(t && t.text);
+  return seen;
+}
+
+// Priorities -> Backlog -> checklist, in that order. Returns the tasks to queue rather
+// than writing them, so the caller stays the only thing that touches the day map.
+export async function pullFromNotion(uid, state, { force = false } = {}) {
+  if (!notionReady()) return { configured: false, items: [] };
+
+  const map = await getNotionMap(uid);
+  const now = Date.now();
+  if (!force && map.pulledAt && now - map.pulledAt < PULL_EVERY_MS) {
+    return { configured: true, skipped: true, items: [] };
+  }
+
+  const pulled = map.pulled || (map.pulled = {});
+  const result = { configured: true, created: 0, queued: 0, failed: 0, errors: [], items: [] };
+  const fail = (what, e) => {
+    result.failed++;
+    if (result.errors.length < 5) result.errors.push(what + ': ' + e.message);
+  };
+
+  if (prioritiesReady()) {
+    try {
+      for (const row of await openPriorities()) {
+        try {
+          if ((await ensureBacklogRow(row)).created) result.created++;
+        } catch (e) {
+          fail(row.text, e);
+        }
+      }
+    } catch (e) {
+      fail('priorities', e);
+    }
+  }
+
+  try {
+    const known = checklistTitles(state);
+    for (const row of await openBacklog()) {
+      if (pulled[row.id]) continue;
+      pulled[row.id] = { text: row.text, at: now };
+      if (known.has(row.text.toLowerCase())) continue;
+      // The star is what keeps it syncing back once it is in the list.
+      result.items.push({ text: row.text + ' *', date: row.date && row.date >= todayStr() ? row.date : todayStr(), category: 'work' });
+      result.queued++;
+    }
+  } catch (e) {
+    fail('backlog', e);
+  }
+
+  map.pulledAt = now;
+  await putNotionMap(uid, map);
+  return result;
+}
