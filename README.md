@@ -173,15 +173,66 @@ curl -s -X POST https://checklist-tracker-pi.vercel.app/api/notion-sync \
 `GET` answers before a token is ever set, so it is also the way to check the stars on
 their own. `POST` is the one to reach for after Notion has been down.
 
+## Reading Linear
+
+Notion is not where the work starts. Linear is, and something mirrors part of it into
+the Priorities board a couple of minutes later. Part is the problem: that mirror carried
+every issue filed by a teammate and none of the thirteen filed from this account, so the
+checklist kept missing its owner's own work. So Linear is read directly as well.
+
+```
+Linear  ---------------------------> Checklist
+   |  issues assigned to you              |
+   |  that are still open                 |  tick one off
+   <--------------------------------------+
+```
+
+Only issues **assigned to you**. Linear holds thousands and almost none of them are
+yours to do. What arrives reads like the branch it will become:
+
+```
+VER-961 Wellfound: update banner to Very
+```
+
+| in Linear | in the checklist |
+|---|---|
+| an open issue is assigned to you | it becomes a task, on its due date |
+| that issue has no due date | it lands on today |
+| the issue is Done or Cancelled | it is not pulled at all |
+| you delete the task here | it stays deleted; an issue is handed over once |
+| you tick the task off | the issue moves to Done in Linear |
+
+Closing is the only thing written back, and only to an issue this app handed over. A
+task you typed yourself that happens to read like an issue title is never matched to one.
+
+Unlike the Notion side, these tasks carry no star. The star means *send this to the
+Design To-Do page*, and an issue that the Linear to Notion mirror already copied would
+otherwise arrive there twice.
+
+The pull sits in `GET /api/sync` behind the same five minute gate, and the close happens
+on save. Neither can fail a save or a load: a Linear outage is a line in the response.
+
+### Turning it on
+
+| Variable | What it does |
+|---|---|
+| `LINEAR_API_KEY` | A personal API key from Linear's Settings → API. Unlike Notion's token this needs no workspace owner, so you can make it yourself. Without it the whole thing is a no-op. |
+
+```
+vercel env add LINEAR_API_KEY production
+```
+
 ## How the data is laid out
 
 ```
 state.json                 the owner's list  (predates accounts; left exactly where it was)
 inbox.json                 the owner's queue of agent-posted tasks
 notion-map.json            which Notion row each starred task became
+linear-map.json            which Linear issue each task came from, and what's been closed
 u/<id>/state.json          one list per account
 u/<id>/inbox.json          one queue per account
 u/<id>/notion-map.json     one row map per account
+u/<id>/linear-map.json     one issue map per account
 users/<sha256(email)>.json { id, email, salt, scrypt hash }
 invites/index.json         every invitation and whether it's been used
 ```

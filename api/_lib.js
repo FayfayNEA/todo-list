@@ -14,6 +14,9 @@ const inboxPath = (uid) => (uid === OWNER_UID ? 'inbox.json' : `u/${uid}/inbox.j
 // client replaces that wholesale on every save, and a stale tab would drop the links
 // and leave the next sync making duplicate rows.
 const notionMapPath = (uid) => (uid === OWNER_UID ? 'notion-map.json' : `u/${uid}/notion-map.json`);
+// Which Linear issue each handed-over task came from, and which have been closed from
+// here. Same reasoning as the Notion map: the client replaces state.json wholesale.
+const linearMapPath = (uid) => (uid === OWNER_UID ? 'linear-map.json' : `u/${uid}/linear-map.json`);
 
 const AUTH_SECRET = (process.env.AUTH_SECRET || '').trim();
 const INVITE_CODE = (process.env.INVITE_CODE || '').trim();
@@ -69,6 +72,8 @@ export const getInbox = (uid) => readJson(inboxPath(uid), []);
 export const putInbox = (uid, v) => writeJson(inboxPath(uid), v);
 export const getNotionMap = (uid) => readJson(notionMapPath(uid), { tasks: {} });
 export const putNotionMap = (uid, v) => writeJson(notionMapPath(uid), v);
+export const getLinearMap = (uid) => readJson(linearMapPath(uid), { pulled: {}, closed: {} });
+export const putLinearMap = (uid, v) => writeJson(linearMapPath(uid), v);
 
 // ---------- passwords ----------
 // scrypt with these parameters takes ~100ms, which is the point: it's the only thing

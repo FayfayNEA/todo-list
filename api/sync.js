@@ -3,6 +3,7 @@ import {
   mayOpen, workOnly, followerMaySee,
 } from './_lib.js';
 import { notionReady, syncMarked, pullFromNotion } from './_notion.js';
+import { linearReady, pullFromLinear, pushDoneToLinear } from './_linear.js';
 
 // GET  /api/sync[?uid=]  -> drains the agent inbox into the day map, returns the whole state
 // PUT  /api/sync[?uid=]  -> replaces stored state with the posted { days, backlog, ideas, quotes, manifesto, checkins }
@@ -58,17 +59,32 @@ export default async function handler(req, res) {
       // the board become Backlog rows, and open Backlog rows become tasks here. It goes
       // through the same queue the agent API uses, so there is one path into a day. A
       // guest is looking at somebody else's board and never sets any of it going.
+      // Linear is read the same way, and directly: the mirror that copies it into Notion
+      // only carries what somebody else filed, so work raised from here never came back.
       let pulled;
-      if (!guest && notionReady()) {
-        try {
-          pulled = await pullFromNotion(uid, state);
-          if (pulled.items && pulled.items.length) {
-            await putInbox(uid, (await getInbox(uid)).concat(pulled.items));
+      let fromLinear;
+      if (!guest) {
+        const queued = [];
+        if (notionReady()) {
+          try {
+            pulled = await pullFromNotion(uid, state);
+            queued.push(...(pulled.items || []));
+          } catch (e) {
+            console.error('notion pull', e);
+            pulled = { configured: true, failed: 1, errors: [String((e && e.message) || e)] };
           }
-        } catch (e) {
-          console.error('notion pull', e);
-          pulled = { configured: true, failed: 1, errors: [String((e && e.message) || e)] };
         }
+        if (linearReady()) {
+          try {
+            fromLinear = await pullFromLinear(uid, state);
+            queued.push(...(fromLinear.items || []));
+          } catch (e) {
+            console.error('linear pull', e);
+            fromLinear = { configured: true, failed: 1, errors: [String((e && e.message) || e)] };
+          }
+        }
+        // One write, so two sources cannot race each other into the same queue.
+        if (queued.length) await putInbox(uid, (await getInbox(uid)).concat(queued));
       }
 
       const inbox = await getInbox(uid);
@@ -106,6 +122,7 @@ export default async function handler(req, res) {
         checkins: storedCheckins(state),
         // Only worth saying when it actually did something; a skipped pull is noise.
         ...(pulled && !pulled.skipped && pulled.configured ? { notion: pulled } : {}),
+        ...(fromLinear && !fromLinear.skipped && fromLinear.configured ? { linear: fromLinear } : {}),
         // Who this token belongs to: the app shows it, and uses it to tell whose
         // board it is looking at.
         account: accountFor(auth),
@@ -147,7 +164,18 @@ export default async function handler(req, res) {
           notion = { configured: true, failed: 1, errors: [String(e.message || e)] };
         }
       }
-      res.status(200).json(notion ? { ok: true, notion } : { ok: true });
+      // Ticking off a task that came from Linear closes the issue it came from. Same
+      // rule as Notion: the save already happened and nothing here may undo it.
+      let linear;
+      if (linearReady()) {
+        try {
+          linear = await pushDoneToLinear(uid, { days, backlog });
+        } catch (e) {
+          console.error('linear close', e);
+          linear = { configured: true, failed: 1, errors: [String((e && e.message) || e)] };
+        }
+      }
+      res.status(200).json({ ok: true, ...(notion ? { notion } : {}), ...(linear ? { linear } : {}) });
       return;
     }
 
