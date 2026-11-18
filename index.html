@@ -3928,6 +3928,11 @@ let pushInFlight = false;
 // Bumped on every local edit. A pull that started before an edit must not apply
 // over the top of it.
 let localEdits = 0;
+// True once the first load has reconciled this browser against what's stored. A PUT
+// replaces the whole list, so one sent before that point sends a cache instead of a
+// list: a phone opening a tab it hasn't shown for days would overwrite everything done
+// on the other device since. Nothing goes out until this is set.
+let serverLoaded = false;
 
 function setSaveStatus(state) {
   saveState = state;
@@ -3967,6 +3972,11 @@ async function pushState() {
   // Someone else's board is read-only. Loading an empty one used to look like a first
   // run and try to save a blank list over it; the server refused, but it shouldn't ask.
   if (viewingShared()) { setSaveStatus('saved'); return; }
+  // The first load hasn't come back yet (or it failed). Whatever we'd send is built from
+  // the cache, and the server would take it as the whole list. Hold it: the cache is
+  // marked dirty, so either this timer sends it the moment the load lands, or the next
+  // load merges it in.
+  if (!serverLoaded) { pushTimer = setTimeout(pushState, 1000); setSaveStatus('offline'); return; }
   const key = getToken();
   if (!key) { setSaveStatus('offline'); showAuthGate(''); return; }
   pushInFlight = true;
@@ -4055,6 +4065,10 @@ function mergeState(remote) {
 }
 
 async function loadAll() {
+  // Signing in, switching account or picking up a shared board all come back through
+  // here, and each one is a different list. Hold saves until this load says what's
+  // stored, the same as on a cold start.
+  serverLoaded = false;
   // Show cached data immediately if we have it.
   const cached = readCache();
   if (cached) { applyState(cached); renderAll(); }
@@ -4062,6 +4076,7 @@ async function loadAll() {
   const key = getToken();
   if (!key) {
     if (!cached) { seedDays(); backlog = seedBacklog(); }
+    serverLoaded = true;      // nothing to reconcile against; the cache is all there is
     setSaveStatus('offline');
     renderAll();
     renderAccount();
@@ -4069,6 +4084,7 @@ async function loadAll() {
     return;
   }
 
+  const editsAtStart = localEdits;
   try {
     const res = await fetch(syncUrl(), { headers: { 'Authorization': 'Bearer ' + key } });
     if (res.status === 401) {
@@ -4098,6 +4114,8 @@ async function loadAll() {
     applyAccount(state.account);
 
     const serverEmpty = !state || ((!state.days || Object.keys(state.days).length === 0) && (!state.backlog || state.backlog.length === 0));
+    // Reconciled: saves may go out from here, including the ones below.
+    serverLoaded = true;
     if (cached && cached.dirty) {
       // Last session ended before its save landed, and a phone closing the tab is enough.
       // The cache is the newer copy, so merge the server into it and send the result
@@ -4114,6 +4132,12 @@ async function loadAll() {
     } else if (serverEmpty && cached) {
       // Server blank but we have local data: keep local, push it up.
       pushState();
+    } else if (localEdits !== editsAtStart) {
+      // Something was ticked or typed while this request was in the air. The stored copy
+      // is the older one by that much, so fold it in rather than letting it land on top.
+      applyState(mergeState(state));
+      writeCache(true);
+      pushState();
     } else {
       applyState(state);
       writeCache(false);
@@ -4121,6 +4145,9 @@ async function loadAll() {
     }
     renderAll();
   } catch (e) {
+    // Deliberately leaves serverLoaded false: we still don't know what's stored, so a
+    // save now would be a guess at the whole list. Work goes to the cache, which the
+    // next load merges in, and lookAgain() tries the load again.
     console.warn('load failed, using cache', e);
     if (!cached) { seedDays(); backlog = seedBacklog(); }
     setSaveStatus('offline');
@@ -4138,6 +4165,9 @@ async function refreshFromServer() {
   // failed save: the server's copy is the older one, and applying it would wipe work
   // that hasn't landed yet. Retry the save instead.
   if (!key || document.body.classList.contains('dragging-item')) return;
+  // The first load is what decides between the cache and the stored list; until it has,
+  // a plain pull would apply one over the other without looking.
+  if (!serverLoaded) return;
   if (pushTimer || pushInFlight) return;
   if (pushFailed) { pushState(); return; }
   const editsAtStart = localEdits;
@@ -4161,6 +4191,8 @@ window.addEventListener('focus', refreshFromServer);
 const LIVE_EVERY = 15000;
 async function lookAgain() {
   if (document.hidden || !getToken()) return;
+  // The first load never landed, so there is still nothing to pull against. Try it again.
+  if (!serverLoaded) { await loadAll(); return; }
   try {
     await refreshFromServer();          // yours, or theirs if you're looking at them
     await loadNotes(true);
@@ -5979,7 +6011,11 @@ function rollOver() {
       onToday.add(copyId);
     });
   });
-  if (moved) queuePush();
+  // Before the first load this is rolling over the cache, not the list. Showing it is
+  // right; saving it is not, and marking the cache dirty over it would make the next
+  // load merge a stale copy back in. The load applies the stored list and rolls that
+  // over, which is the roll-over worth keeping.
+  if (moved && serverLoaded) queuePush();
   return moved > 0;
 }
 
